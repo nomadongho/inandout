@@ -41,8 +41,10 @@ export const exploreRun = {
   score:     0,
   elapsed:   0,    // seconds
   energy:    100,
-  log:       [],   // string[]
+  danger:    0,    // 0–100 danger pressure meter
+  log:       [],   // {msg, type, time}[]
   enemies:   [],   // simple enemy objects
+  summary:   null, // populated on endRun
 };
 
 /**
@@ -65,13 +67,15 @@ export const ui = {
 
 /** Reset explore run to initial values. */
 export function resetExploreRun() {
-  exploreRun.active  = false;
-  exploreRun.paused  = false;
-  exploreRun.score   = 0;
-  exploreRun.elapsed = 0;
-  exploreRun.energy  = 100;
-  exploreRun.log     = [];
-  exploreRun.enemies = [];
+  exploreRun.active   = false;
+  exploreRun.paused   = false;
+  exploreRun.score    = 0;
+  exploreRun.elapsed  = 0;
+  exploreRun.energy   = 100;
+  exploreRun.danger   = 0;
+  exploreRun.log      = [];
+  exploreRun.enemies  = [];
+  exploreRun.summary  = null;
 }
 
 /** Reset survive state to fresh values (new game). */

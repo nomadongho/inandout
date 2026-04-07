@@ -222,6 +222,16 @@ export function buildExploreScreen() {
   hud.appendChild(hudLeft);
   hud.appendChild(hudRight);
 
+  // ── Danger bar ────────────────────────────────────────────────────────────
+  const dangerBar = document.createElement('div');
+  dangerBar.className = 'explore-danger-bar';
+  dangerBar.id        = 'explore-danger-bar';
+  dangerBar.innerHTML = `
+    <span class="danger-label">⚠ Danger</span>
+    <div class="danger-track"><div class="danger-fill" id="explore-danger-fill" style="width:0%"></div></div>
+    <span class="danger-value" id="explore-danger-val">0%</span>
+  `;
+
   // ── Derived state meters ───────────────────────────────────────────────────
   const meters = document.createElement('div');
   meters.className = 'meters-panel';
@@ -271,6 +281,7 @@ export function buildExploreScreen() {
   bar.appendChild(btnHome);
 
   wrap.appendChild(hud);
+  wrap.appendChild(dangerBar);
   wrap.appendChild(meters);
   wrap.appendChild(_radar.canvas);
   wrap.appendChild(logEl);
@@ -309,6 +320,15 @@ function _refreshExploreHUD() {
   if (timerEl)  timerEl.textContent  = formatTime(exploreRun.elapsed);
   if (energyEl) energyEl.textContent = `Energy: ${Math.round(exploreRun.energy)}%`;
 
+  // Danger bar
+  const dangerPct    = Math.round(exploreRun.danger);
+  const dangerFillEl = document.getElementById('explore-danger-fill');
+  const dangerValEl  = document.getElementById('explore-danger-val');
+  const dangerBarEl  = document.getElementById('explore-danger-bar');
+  if (dangerFillEl) dangerFillEl.style.width = `${dangerPct}%`;
+  if (dangerValEl)  dangerValEl.textContent  = `${dangerPct}%`;
+  if (dangerBarEl)  dangerBarEl.classList.toggle('is-high', dangerPct > 66);
+
   // Update meters
   if (cache.exploreMeterEls) {
     Object.keys(cache.exploreMeterEls).forEach(key => {
@@ -324,10 +344,31 @@ function _refreshExploreHUD() {
 }
 
 function _showRunSummary() {
+  const s = exploreRun.summary || {};
+  const score   = s.score   ?? Math.floor(exploreRun.score);
+  const time    = formatTime(s.elapsed ?? exploreRun.elapsed);
+  const cause   = s.mainCause  || '—';
+  const sensor  = s.topSensor  || '—';
+
   const body = `
-    <p>Score: <strong>${Math.floor(exploreRun.score)}</strong></p>
-    <p>Survived: <strong>${formatTime(exploreRun.elapsed)}</strong></p>
-    <p>Final Energy: <strong>${Math.round(exploreRun.energy)}%</strong></p>
+    <div class="run-summary-grid">
+      <div class="summary-item">
+        <div class="summary-label">Final Score</div>
+        <div class="summary-value">${score}</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-label">Survival Time</div>
+        <div class="summary-value">${time}</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-label">Cause of Failure</div>
+        <div class="summary-value">${cause}</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-label">Top Sensor Influence</div>
+        <div class="summary-value">${sensor}</div>
+      </div>
+    </div>
   `;
   showModal('Run Complete', body, 'Back to Home', () => navigate('home'));
 }
