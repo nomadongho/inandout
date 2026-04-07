@@ -17,12 +17,13 @@ import {
   buildHomeScreen,
   buildSensorScreen,   teardownSensorScreen,
   buildExploreScreen,
-  buildSurviveScreen,
+  buildSurviveScreen,  teardownSurviveScreen,
 } from './ui/screens.js';
 
 /** Map of screen teardown callbacks */
 const teardowns = {
-  sensor: teardownSensorScreen,
+  sensor:  teardownSensorScreen,
+  survive: teardownSurviveScreen,
 };
 
 /**

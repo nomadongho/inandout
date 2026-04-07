@@ -551,7 +551,53 @@ html, body {
   .home-title { font-size: 4rem; }
 }
 
-/* ── EXPLORE MODE ADDITIONS ──────────────────────────────── */
+/* ── SURVIVE MODE ADDITIONS ──────────────────────────────── */
+
+/* Critical/warning state badges in the day-counter panel */
+.survive-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.survive-crit {
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: var(--danger);
+  background: rgba(255,68,68,0.12);
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  padding: 2px 8px;
+  letter-spacing: 0.05em;
+  animation: danger-flash 1s ease-in-out infinite;
+}
+
+.survive-warn {
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: var(--warn);
+  background: rgba(255,170,0,0.12);
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  padding: 2px 8px;
+  letter-spacing: 0.05em;
+}
+
+/* Situational advice hint */
+.survive-advice {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  color: var(--accent2);
+  opacity: 0.85;
+}
+
+/* Environment condition labels */
+.cond-good { color: var(--accent);   font-size: 0.75rem; font-weight: 700; }
+.cond-warn { color: var(--warn);     font-size: 0.75rem; font-weight: 700; }
+.cond-bad  { color: var(--danger);   font-size: 0.75rem; font-weight: 700; }
+.cond-ok   { color: var(--text-dim); font-size: 0.75rem; }
 
 /* Danger bar */
 .explore-danger-bar {
