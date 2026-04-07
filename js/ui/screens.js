@@ -84,7 +84,15 @@ export function buildSensorScreen() {
     enableBtn.disabled    = true;
     enableBtn.textContent = 'Requesting…';
     await engine.enableSensors();
-    enableBtn.textContent = 'Sensors Enabled';
+    // Check if any permission was denied so the user can try again
+    const status = engine.getSensorStatus();
+    const anyDenied = status.noise === 'denied' || status.motion === 'denied';
+    if (anyDenied) {
+      enableBtn.disabled    = false;
+      enableBtn.textContent = '🔓 Retry Permissions';
+    } else {
+      enableBtn.textContent = '✓ Sensors Enabled';
+    }
     // Immediately refresh the sensor rows to reflect new statuses
     updateSensorScreen();
   }, 'btn-primary btn-enable-sensors');

@@ -115,8 +115,8 @@ export const motionReader = {
         console.warn('[motion] Permission error:', err);
         this.status = 'denied';
       }
-    } else if (this.status !== 'active') {
-      // Non-iOS fallback: start directly if not already running
+    } else if (this.status === 'permission-needed' || this.status === 'using-simulation') {
+      // Non-iOS fallback: start directly if not already running or denied
       this._attachListener();
       this.status = 'active';
     }
