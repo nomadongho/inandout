@@ -79,9 +79,20 @@ export function buildSensorScreen() {
     'Some mobile browsers block sensors until you tap Enable Sensors. ' +
     'If a sensor is unavailable, simulation controls will be used instead.';
 
+  // Note shown when permissions are permanently denied at the OS level
+  const deniedNote = document.createElement('p');
+  deniedNote.className = 'sensor-denied-note';
+  deniedNote.style.display = 'none';
+  deniedNote.textContent =
+    'Permission was denied. To re-enable, go to your device Settings ' +
+    'and allow this site to access the microphone and motion sensors ' +
+    '(iOS: Settings → Privacy → Microphone / Motion & Fitness; ' +
+    'Android: Settings → Apps → Browser → Permissions).';
+
   // Prominent "Enable Sensors" button — permission is only requested on tap
   const enableBtn = buildButton('🔓 Enable Sensors', async () => {
     enableBtn.disabled    = true;
+    deniedNote.style.display = 'none';
     enableBtn.textContent = 'Requesting…';
     await engine.enableSensors();
     // Check if any permission was denied so the user can try again
@@ -89,7 +100,8 @@ export function buildSensorScreen() {
     const anyDenied = status.noise === 'denied' || status.motion === 'denied';
     if (anyDenied) {
       enableBtn.disabled    = false;
-      enableBtn.textContent = '🔓 Retry Permissions';
+      enableBtn.textContent = '🔒 Retry Permissions';
+      deniedNote.style.display = '';
     } else {
       enableBtn.textContent = '✓ Sensors Enabled';
     }
@@ -131,6 +143,7 @@ export function buildSensorScreen() {
   wrap.appendChild(header);
   wrap.appendChild(helpNote);
   wrap.appendChild(enableBtn);
+  wrap.appendChild(deniedNote);
   wrap.appendChild(rows);
   wrap.appendChild(fallbackSection);
   app.appendChild(wrap);
