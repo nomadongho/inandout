@@ -520,21 +520,10 @@ export function buildSurviveScreen() {
   logEl.id        = 'survive-log';
   logEl.className = 'event-log';
 
-  // ── Action bar ────────────────────────────────────────────────────────────
+  // ── Action bar (filled dynamically in updateSurviveScreen) ──────────────────
   const bar = document.createElement('div');
   bar.className = 'action-bar action-bar-survive';
-
-  const actions = [
-    { label: '🔍 Explore',  fn: () => { actionExplore();  updateSurviveScreen(); } },
-    { label: '😴 Rest',      fn: () => { actionRest();     updateSurviveScreen(); } },
-    { label: '🫥 Hide',      fn: () => { actionHide();     updateSurviveScreen(); } },
-    { label: '🔋 Recharge',  fn: () => { actionRecharge(); updateSurviveScreen(); } },
-    { label: '🌅 Next Day',  fn: () => { actionNextDay();  updateSurviveScreen(); } },
-  ];
-
-  actions.forEach(({ label, fn }) => {
-    bar.appendChild(buildButton(label, fn, 'btn-action'));
-  });
+  bar.id        = 'survive-action-bar';
 
   // Extra row: home + new game
   const extraBar = document.createElement('div');
@@ -557,10 +546,12 @@ export function buildSurviveScreen() {
 
   updateSurviveScreen();
 
-  // Refresh env summary every 5 s so sensor changes are reflected without an action
+  // Refresh env summary + action hints every 5 s so sensor changes are visible
   cache.surviveEnvInterval = setInterval(() => {
     const envEl = document.getElementById('survive-env');
     if (envEl) _renderSurviveEnv(envEl);
+    const barEl = document.getElementById('survive-action-bar');
+    if (barEl) _buildSurviveActionBar(barEl);
   }, 5000);
 }
 
@@ -607,7 +598,96 @@ export function updateSurviveScreen() {
     });
   }
 
-  if (logEl) renderLog(logEl, survive.log);
+  if (logEl) {
+    renderLog(logEl, survive.log);
+    logEl.scrollTop = 0;
+    // Flash newest entry so the player sees the action result immediately
+    const firstEntry = logEl.querySelector('p');
+    if (firstEntry) firstEntry.classList.add('log-new');
+  }
+
+  // Rebuild action bar so condition hints reflect current sensors
+  const barEl = document.getElementById('survive-action-bar');
+  if (barEl) _buildSurviveActionBar(barEl);
+}
+
+/**
+ * Compute current sensor condition hints for each survive action.
+ * Returns {explore, rest, hide, recharge, nextDay} — each {text, level}.
+ */
+function _getSurviveHints() {
+  const isVeryNoisy = derived.exposure      > 78;
+  const isNoisy     = derived.exposure      > 55;
+  const isDark      = derived.visibility    < 35;
+  const isBright    = derived.visibility    > 65;
+  const isLowBat    = derived.energyModifier < 35;
+  const isHighBat   = derived.energyModifier > 70;
+
+  // REST
+  let rest;
+  if (isVeryNoisy)     rest = { text: '🔴 Very noisy — poor rest',    level: 'bad'  };
+  else if (isNoisy)    rest = { text: '🟡 Noisy — rest reduced',       level: 'warn' };
+  else if (isDark)     rest = { text: '🟢 Dark & quiet — deep rest',   level: 'ok'   };
+  else                 rest = { text: '🟢 Quiet — good rest',          level: 'ok'   };
+
+  // HIDE
+  let hide;
+  if (isDark && !isVeryNoisy)  hide = { text: '🟢 Dark cover — ideal',    level: 'ok'   };
+  else if (isBright)           hide = { text: '🔴 Too bright — risky',    level: 'bad'  };
+  else if (isVeryNoisy)        hide = { text: '🔴 Very noisy — unsafe',   level: 'bad'  };
+  else if (isNoisy)            hide = { text: '🟡 Noisy — stay alert',    level: 'warn' };
+  else                         hide = { text: '🟡 Moderate conditions',   level: 'warn' };
+
+  // EXPLORE
+  let explore;
+  if (isBright && derived.stealth < 50)  explore = { text: '🟡 Exposed — watch out',    level: 'warn' };
+  else if (isDark)                       explore = { text: '🟡 Dark — fewer supplies',   level: 'warn' };
+  else if (derived.stealth > 65)         explore = { text: '🟢 Good stealth — safe run', level: 'ok'   };
+  else if (isLowBat)                     explore = { text: '🟡 Low battery — tiring',    level: 'warn' };
+  else                                   explore = { text: '🟢 Clear conditions',        level: 'ok'   };
+
+  // RECHARGE
+  let recharge;
+  if (isHighBat)      recharge = { text: '🟢 High battery — efficient',  level: 'ok'   };
+  else if (isLowBat)  recharge = { text: '🔴 Low battery — poor yield',  level: 'bad'  };
+  else if (isBright)  recharge = { text: '🟡 Light bonus available',     level: 'ok'   };
+  else                recharge = { text: '🟡 Moderate efficiency',       level: 'warn' };
+
+  // NEXT DAY
+  let nextDay;
+  if (survive.health <= 0)       nextDay = { text: '💀 Health failed!',      level: 'bad'  };
+  else if (survive.health < 20)  nextDay = { text: '⚠ Health critical!',     level: 'bad'  };
+  else if (survive.resources <=0) nextDay = { text: '⚠ No resources!',       level: 'bad'  };
+  else if (survive.stress > 80)  nextDay = { text: '⚠ Stress critical!',     level: 'bad'  };
+  else                           nextDay = { text: `→ Day ${survive.day + 1}`, level: 'ok'   };
+
+  return { rest, hide, explore, recharge, nextDay };
+}
+
+/**
+ * Build (or rebuild) the survive action bar with sensor condition hints.
+ * Called on initial build, after every action, and on the 5 s interval.
+ */
+function _buildSurviveActionBar(container) {
+  container.innerHTML = '';
+  const hints = _getSurviveHints();
+  const actions = [
+    { label: '🔍 Explore', hint: hints.explore,  fn: () => { actionExplore();  updateSurviveScreen(); } },
+    { label: '😴 Rest',     hint: hints.rest,     fn: () => { actionRest();     updateSurviveScreen(); } },
+    { label: '🫥 Hide',     hint: hints.hide,     fn: () => { actionHide();     updateSurviveScreen(); } },
+    { label: '🔋 Recharge', hint: hints.recharge, fn: () => { actionRecharge(); updateSurviveScreen(); } },
+    { label: '🌅 Next Day', hint: hints.nextDay,  fn: () => { actionNextDay();  updateSurviveScreen(); } },
+  ];
+  actions.forEach(({ label, hint, fn }) => {
+    const card   = document.createElement('div');
+    card.className = 'action-card';
+    card.appendChild(buildButton(label, fn, 'btn-action'));
+    const hintEl = document.createElement('div');
+    hintEl.className   = `action-hint action-hint-${hint.level}`;
+    hintEl.textContent = hint.text;
+    card.appendChild(hintEl);
+    container.appendChild(card);
+  });
 }
 
 /** Render the environment summary panel (also called on interval). */

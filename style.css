@@ -561,6 +561,33 @@ html, body {
   flex: 1;
 }
 
+/* ── SURVIVE ACTION CARDS ─────────────────────────────────── */
+/* Each card = button + sensor condition hint below it */
+.action-card {
+  flex: 1;
+  min-width: 55px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.action-hint {
+  font-size: 0.58rem;
+  text-align: center;
+  padding: 2px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.action-hint-ok   { color: var(--accent);  background: rgba(0,255,136,0.08); }
+.action-hint-warn { color: var(--warn);    background: rgba(255,170,0,0.08); }
+.action-hint-bad  {
+  color: var(--danger);
+  background: rgba(255,68,68,0.10);
+  animation: danger-flash 1s ease-in-out infinite;
+}
+
 .action-bar-extra {
   display: flex;
   gap: 8px;
@@ -763,6 +790,26 @@ html, body {
 .event-log .log-danger { color: var(--danger); }
 .event-log .log-bonus  { color: var(--accent); }
 .event-log .log-warn   { color: var(--warn); }
+
+/* Survive mode: action section headers (e.g. "— REST —", "══ END OF DAY 3 ══") */
+.event-log .log-action {
+  color: var(--accent2);
+  font-weight: 700;
+  font-size: 0.75rem;
+  border-top: 1px solid var(--border);
+  margin-top: 3px;
+  padding-top: 4px;
+}
+
+/* Flash animation for the newest log entry after an action */
+@keyframes log-entry-flash {
+  0%   { background: rgba(0,255,136,0.18); }
+  100% { background: transparent; }
+}
+
+.event-log p.log-new {
+  animation: log-entry-flash 0.9s ease-out forwards;
+}
 
 .log-time {
   color: var(--text-dim);
