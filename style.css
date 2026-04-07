@@ -465,17 +465,6 @@ html, body {
 .hud-left  { display: flex; gap: 16px; }
 .hud-right { display: flex; gap: 16px; }
 
-/* ── RADAR (legacy — kept for compatibility) ──────────────── */
-.radar, .explore-radar {
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  display: block;
-  margin: 0 auto;
-  width: 180px !important;
-  height: 180px !important;
-  max-width: 100%;
-}
-
 /* ── GAME CANVAS ──────────────────────────────────────────── */
 .game-canvas, .explore-game-canvas {
   display: block;
@@ -572,7 +561,7 @@ html, body {
 }
 
 .action-hint {
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   text-align: center;
   padding: 2px 4px;
   border-radius: 2px;
@@ -855,6 +844,7 @@ html, body {
   .explore-danger-bar.is-high,
   .survive-crit,
   .screen-explore.detection-flash,
+  .action-hint-bad,
   .home-title {
     animation: none;
   }

@@ -601,9 +601,15 @@ export function updateSurviveScreen() {
   if (logEl) {
     renderLog(logEl, survive.log);
     logEl.scrollTop = 0;
-    // Flash newest entry so the player sees the action result immediately
+    // Flash newest entry so the player sees the action result immediately;
+    // remove the class on animationend so it can re-trigger next action.
     const firstEntry = logEl.querySelector('p');
-    if (firstEntry) firstEntry.classList.add('log-new');
+    if (firstEntry) {
+      firstEntry.classList.add('log-new');
+      firstEntry.addEventListener('animationend', () => {
+        firstEntry.classList.remove('log-new');
+      }, { once: true });
+    }
   }
 
   // Rebuild action bar so condition hints reflect current sensors
@@ -655,11 +661,11 @@ function _getSurviveHints() {
 
   // NEXT DAY
   let nextDay;
-  if (survive.health <= 0)       nextDay = { text: '💀 Health failed!',      level: 'bad'  };
-  else if (survive.health < 20)  nextDay = { text: '⚠ Health critical!',     level: 'bad'  };
-  else if (survive.resources <=0) nextDay = { text: '⚠ No resources!',       level: 'bad'  };
-  else if (survive.stress > 80)  nextDay = { text: '⚠ Stress critical!',     level: 'bad'  };
-  else                           nextDay = { text: `→ Day ${survive.day + 1}`, level: 'ok'   };
+  if (survive.health <= 0)        nextDay = { text: '💀 Health failed!',      level: 'bad'  };
+  else if (survive.health < 20)   nextDay = { text: '⚠ Health critical!',     level: 'bad'  };
+  else if (survive.resources <= 0) nextDay = { text: '⚠ No resources!',       level: 'bad'  };
+  else if (survive.stress > 80)   nextDay = { text: '⚠ Stress critical!',     level: 'bad'  };
+  else                            nextDay = { text: `→ Day ${survive.day + 1}`, level: 'ok'  };
 
   return { rest, hide, explore, recharge, nextDay };
 }

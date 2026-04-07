@@ -188,7 +188,7 @@ export function buildSensorRow(id, label, status, valueStr) {
  * @returns {{ canvas: HTMLCanvasElement, draw: Function }}
  */
 export function buildGameCanvas() {
-  const PULSE_PERIOD_MS = 400; // ms for one full beacon/shimmer oscillation cycle
+  const PULSE_PERIOD_MS = 2400; // full oscillation cycle in milliseconds (~2.4 s gentle pulse)
 
   const canvas = document.createElement('canvas');
   canvas.className = 'game-canvas';
@@ -216,8 +216,8 @@ export function buildGameCanvas() {
       timestamp = 0,
     } = state;
 
-    // pulse oscillates 0–1 using the rAF timestamp (consistent within each frame)
-    const pulse = (Math.sin(timestamp / PULSE_PERIOD_MS) + 1) / 2;
+    // pulse oscillates 0–1 over PULSE_PERIOD_MS milliseconds (consistent within each frame)
+    const pulse = (Math.sin(timestamp * 2 * Math.PI / PULSE_PERIOD_MS) + 1) / 2;
 
     const ctx = canvas.getContext('2d');
     const W   = canvas.width;
