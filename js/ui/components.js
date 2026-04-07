@@ -204,13 +204,18 @@ export function buildGameCanvas() {
    *   shadowCoverage: number,
    *   noiseLevel:     number,
    *   ambientLight:   number,
+   *   timestamp:      number,   rAF timestamp for smooth animation
    * }} state
    */
   function draw(state) {
     const {
       player, enemies, escapePoint,
       inStealthMode, isDetected, shadowCoverage, noiseLevel,
+      timestamp = 0,
     } = state;
+
+    // pulse oscillates 0–1 using the rAF timestamp (consistent within each frame)
+    const pulse = (Math.sin(timestamp / 400) + 1) / 2;
 
     const ctx = canvas.getContext('2d');
     const W   = canvas.width;
@@ -251,9 +256,8 @@ export function buildGameCanvas() {
     }
 
     // ── Escape beacon ────────────────────────────────────────────────────────
-    const ex     = (escapePoint.x / 100) * W;
-    const ey     = (escapePoint.y / 100) * H;
-    const pulse  = (Math.sin(Date.now() / 400) + 1) / 2; // 0–1 pulsing
+    const ex      = (escapePoint.x / 100) * W;
+    const ey      = (escapePoint.y / 100) * H;
     const beaconR = 8 + pulse * 6;
 
     // Glow

@@ -341,7 +341,7 @@ export function buildExploreScreen() {
 }
 
 /** rAF loop: redraws game canvas at display rate (~60 fps) for smooth visuals. */
-function _canvasLoop() {
+function _canvasLoop(timestamp) {
   if (_gameCanvas && exploreRun.active) {
     _gameCanvas.draw({
       player:         exploreRun.player,
@@ -352,6 +352,7 @@ function _canvasLoop() {
       shadowCoverage: exploreRun.shadowCoverage,
       noiseLevel:     sensorRaw.noiseLevel,
       ambientLight:   sensorRaw.ambientLight,
+      timestamp,
     });
   }
   _canvasRafId = requestAnimationFrame(_canvasLoop);
@@ -410,10 +411,16 @@ function _refreshExploreHUD() {
     badgeEl.className   = `player-state-badge ${stateClass}`;
   }
 
-  // Detection flash on the explore screen wrapper
+  // Detection flash on the explore screen wrapper — trigger once per detection event
   const screenEl = document.querySelector('.screen-explore');
   if (screenEl) {
-    screenEl.classList.toggle('detection-flash', exploreRun.isDetected);
+    if (exploreRun.isDetected && !screenEl.classList.contains('detection-flash')) {
+      screenEl.classList.add('detection-flash');
+      // Remove after animation completes so it can re-trigger next event
+      screenEl.addEventListener('animationend', () => {
+        screenEl.classList.remove('detection-flash');
+      }, { once: true });
+    }
   }
 
   // Danger bar

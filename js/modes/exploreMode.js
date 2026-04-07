@@ -44,16 +44,20 @@ const STUMBLE_COOLDOWN_TICKS= 20;    // ticks before another stumble can happen
 const NOISE_THRESHOLD       = 38;    // noise level that alerts nearby enemies
 const SILENCE_STEALTH_SECS  = 3.0;   // s of quiet → stealth mode
 const STEALTH_BREAK_NOISE   = 25;    // noise above this breaks stealth mode
+const UN_ALERT_NOISE        = 15;    // enemy un-alerts when noise drops below this
 const ENEMY_BASE_DETECT_R   = 18;    // base detection radius (0–100 grid units)
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between detection energy hits
 const NOISE_EVENT_COOLDOWN  = 20;    // ticks before another noise event
+const ENEMY_ALERT_MAX_TICKS = 60;    // auto-cancel alert after ~6 s if not re-triggered
 
 // Environment
 const SHADOW_LIGHT_THRESHOLD= 40;    // ambient light below this = shadow coverage
 const LOW_BATTERY_THRESHOLD = 25;    // energyModifier below this = penalties
 const ESCAPE_RADIUS         = 6;     // player distance to escape point → win
 
-// Sensor influence + cause tracking (for end-of-run summary)
+// Sensor influence + cause tracking (for end-of-run summary).
+// INFLUENCE_DANGER_ADD/INFLUENCE_BONUS_SUB accumulate relative sensor pressure.
+// CAUSE_APPROX_ENERGY is a fixed representative estimate for relative comparison only.
 const INFLUENCE_DANGER_ADD  = 4;
 const INFLUENCE_BONUS_SUB   = 2;
 const CAUSE_APPROX_ENERGY   = 10;
@@ -203,6 +207,13 @@ const EVENT_POOL = [
   },
 ];
 
+// ── Night-time helper ─────────────────────────────────────────────────────────
+/** Returns true when the current hour is in the night range (20:00–05:59). */
+function _isNightTime() {
+  const h = sensorRaw.hour;
+  return h >= 20 || h < 6;
+}
+
 // ── Enemy factory ─────────────────────────────────────────────────────────────
 let _enemyId = 0;
 
@@ -223,6 +234,7 @@ function spawnEnemy() {
     speed:           randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100),
     detectionRadius: ENEMY_BASE_DETECT_R, // updated each tick
     alerted:         false,
+    alertTicks:      0,   // counts down; resets on re-trigger
     patrolAngle:     randFloat(0, Math.PI * 2),
     patrolSpeed:     randFloat(0.5, 1.5),
   };
@@ -260,7 +272,9 @@ export function startRun(onUpdate) {
 
   _eventCooldowns.clear();
   _lastAnnouncedTier = 0;
-  _prevTiltMag       = 0;
+  // Seed _prevTiltMag to the current tilt magnitude to avoid a false
+  // stumble on the very first tick when the value was 0.
+  _prevTiltMag       = Math.sqrt(sensorRaw.tiltX ** 2 + sensorRaw.tiltY ** 2);
   _stumbleCooldown   = 0;
   _detectionCooldown = 0;
   _noiseCooldown     = 0;
@@ -512,8 +526,8 @@ function _checkNoiseDetection() {
   if (noise > NOISE_THRESHOLD) {
     _noiseCooldown = NOISE_EVENT_COOLDOWN;
     _pushLog('👁 A watcher detected a sound — stay still!', 'danger');
-    // Alert all enemies temporarily (they converge on player)
-    exploreRun.enemies.forEach(e => { e.alerted = true; });
+    // Alert all enemies temporarily; alertTicks auto-cancels if not re-triggered
+    exploreRun.enemies.forEach(e => { e.alerted = true; e.alertTicks = ENEMY_ALERT_MAX_TICKS; });
     _sensorInfluence.noise += INFLUENCE_DANGER_ADD;
   }
 }
@@ -533,9 +547,7 @@ function _checkBatteryEffects() {
 
 function _checkNightEffects() {
   if (_nightWarnSent) return;
-  const h = sensorRaw.hour;
-  const isNight = h >= 20 || h < 6;
-  if (isNight) {
+  if (_isNightTime()) {
     _nightWarnSent = true;
     _pushLog('🌙 Night has fallen — enemies are faster and more numerous.', 'warn');
   }
@@ -559,9 +571,8 @@ function _updateEnemyDetectionRadii() {
 
 function _spawnEnemyMaybe() {
   if (exploreRun.enemies.length >= MAX_ENEMIES) return;
-  const h = sensorRaw.hour;
-  const nightBonus   = (h >= 20 || h < 6) ? 1.6 : 1.0;
-  const spawnChance  = ENEMY_SPAWN_BASE * (1 + derived.threatLevel / 50) * nightBonus;
+  const nightBonus  = _isNightTime() ? 1.6 : 1.0;
+  const spawnChance = ENEMY_SPAWN_BASE * (1 + derived.threatLevel / 50) * nightBonus;
   if (Math.random() < spawnChance) {
     exploreRun.enemies.push(spawnEnemy());
   }
@@ -580,8 +591,7 @@ function _updateEnemies() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 0.1) return false;
 
-    const h = sensorRaw.hour;
-    const nightSpeed = (h >= 20 || h < 6) ? 1.4 : 1.0;
+    const nightSpeed = _isNightTime() ? 1.4 : 1.0;
     const speed = e.speed * nightSpeed * (1 + derived.exposure / 200);
 
     if (e.alerted) {
@@ -589,12 +599,17 @@ function _updateEnemies() {
       e.x += (dx / dist) * speed;
       e.y += (dy / dist) * speed;
 
-      // Un-alert after stealth or noise drops
-      if (exploreRun.inStealthMode || sensorRaw.noiseLevel < 15) {
+      // Tick down alert timer; un-alert when stealth active, noise drops, or timer expires
+      if (e.alertTicks > 0) e.alertTicks--;
+      if (exploreRun.inStealthMode || sensorRaw.noiseLevel < UN_ALERT_NOISE || e.alertTicks === 0) {
         e.alerted = false;
+        e.alertTicks = 0;
       }
     } else {
-      // Patrol: figure-8 pattern with slight drift toward player
+      // Patrol: approximate figure-8 using two overlaid sine waves.
+      // 0.05 = angle increment per tick; 0.8 = fraction of speed used for patrol;
+      // 0.7 = frequency ratio for Y-axis to create the figure-8 shape;
+      // 0.15 = weak homing fraction that prevents enemies from wandering off-screen.
       e.patrolAngle += e.patrolSpeed * 0.05;
       const patrolDx = Math.cos(e.patrolAngle) * speed * 0.8;
       const patrolDy = Math.sin(e.patrolAngle * 0.7) * speed * 0.8;
@@ -634,7 +649,8 @@ function _checkEnemyDetections() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < e.detectionRadius) {
       detectedByAny = true;
-      e.alerted = true;
+      e.alerted     = true;
+      e.alertTicks  = ENEMY_ALERT_MAX_TICKS; // refresh alert timer on each detection
     }
   });
 
