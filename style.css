@@ -571,6 +571,7 @@ html, body {
   border-radius: 3px;
   padding: 2px 8px;
   letter-spacing: 0.05em;
+  /* Reuses @keyframes danger-flash defined in the Explore Mode section above */
   animation: danger-flash 1s ease-in-out infinite;
 }
 

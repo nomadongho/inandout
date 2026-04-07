@@ -28,7 +28,7 @@ export function loadSurvive() {
   // Normalise log entries from older string-only saves
   if (Array.isArray(saved.log)) {
     saved.log = saved.log.map(e =>
-      typeof e === 'string' ? { msg: e, type: 'info', time: 'D?' } : e,
+      typeof e === 'string' ? { msg: e, type: 'info', time: 'D0' } : e,
     );
   }
   Object.assign(survive, saved);
@@ -297,7 +297,7 @@ export function actionRecharge() {
 
   if (survive.resources < cost) {
     _log('Not enough resources to recharge!', 'danger');
-    saveSurvive();
+    // Log is ephemeral; it will be persisted on the next successful action
     return;
   }
 
@@ -529,9 +529,6 @@ function _rollDayEvent() {
       return;
     }
   }
-  // Fallback to last eligible event
-  const [msg, type] = eligible[eligible.length - 1].apply();
-  _log(msg, type);
 }
 
 // ── Strategic advice ──────────────────────────────────────────────────────────
