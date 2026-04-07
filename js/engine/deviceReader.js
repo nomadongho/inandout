@@ -4,8 +4,9 @@
  *
  * Same pattern as environmentReader:
  *  - start() / stop()
- *  - status  ('unsupported' | 'permission-required' | 'active' | 'error')
+ *  - status    ('unsupported' | 'permission-required' | 'active' | 'error')
  *  - value(s)
+ *  - rawValue  (pre-normalised hardware reading where applicable)
  */
 
 import { clamp } from '../utils.js';
@@ -13,8 +14,9 @@ import { clamp } from '../utils.js';
 // ─── Battery ─────────────────────────────────────────────────────────────────
 
 export const batteryReader = {
-  status: 'unsupported',
-  value:  80,   // 0–100 battery %
+  status:   'unsupported',
+  value:    80,   // 0–100 battery %
+  rawValue: 0,    // raw level fraction from the Battery API (0.0–1.0)
   _battery: null,
 
   async start() {
@@ -25,11 +27,13 @@ export const batteryReader = {
     try {
       const battery   = await navigator.getBattery();
       this._battery   = battery;
+      this.rawValue   = battery.level;
       this.value      = clamp(Math.round(battery.level * 100), 0, 100);
       this.status     = 'active';
 
       const update = () => {
-        this.value = clamp(Math.round(battery.level * 100), 0, 100);
+        this.rawValue = battery.level;
+        this.value    = clamp(Math.round(battery.level * 100), 0, 100);
       };
       battery.addEventListener('levelchange', update);
     } catch (err) {
@@ -40,16 +44,23 @@ export const batteryReader = {
 
   stop() {
     this._battery = null;
+    this.rawValue = 0;
     this.status   = 'unsupported';
   },
 };
 
 // ─── Device Orientation (tilt) ────────────────────────────────────────────────
 
+// Degrees of tilt below which we treat the device as perfectly flat.
+// This suppresses the micro-jitter that all MEMS gyros produce at rest.
+const TILT_DEADZONE_DEG = 2;
+
 export const motionReader = {
-  status: 'unsupported',
-  tiltX:  0,   // -1 to 1
-  tiltY:  0,   // -1 to 1
+  status:   'unsupported',
+  tiltX:    0,    // -1 to 1  (left–right,  normalised from gamma)
+  tiltY:    0,    // -1 to 1  (front–back,  normalised from beta)
+  rawGamma: 0,    // raw gamma in degrees (-90 to 90)
+  rawBeta:  0,    // raw beta  in degrees (-180 to 180)
   _handler: null,
 
   async start() {
@@ -75,12 +86,21 @@ export const motionReader = {
     }
 
     this._handler = (event) => {
-      // gamma = left/right tilt (-90 to 90)
-      // beta  = front/back tilt (-180 to 180)
+      // gamma = left/right tilt (-90 to 90 degrees)
+      // beta  = front/back tilt (-180 to 180 degrees)
       const gamma = event.gamma ?? 0;
       const beta  = event.beta  ?? 0;
-      this.tiltX  = clamp(gamma / 90, -1, 1);
-      this.tiltY  = clamp(beta  / 90, -1, 1);
+
+      // Store raw degrees for diagnostic / debug access
+      this.rawGamma = gamma;
+      this.rawBeta  = beta;
+
+      // Apply deadzone: treat small tilts as flat to suppress resting noise
+      const effectiveGamma = Math.abs(gamma) < TILT_DEADZONE_DEG ? 0 : gamma;
+      const effectiveBeta  = Math.abs(beta)  < TILT_DEADZONE_DEG ? 0 : beta;
+
+      this.tiltX = clamp(effectiveGamma / 90, -1, 1);
+      this.tiltY = clamp(effectiveBeta  / 90, -1, 1);
     };
 
     window.addEventListener('deviceorientation', this._handler);
@@ -92,9 +112,11 @@ export const motionReader = {
       window.removeEventListener('deviceorientation', this._handler);
       this._handler = null;
     }
-    this.tiltX  = 0;
-    this.tiltY  = 0;
-    this.status = 'unsupported';
+    this.tiltX    = 0;
+    this.tiltY    = 0;
+    this.rawGamma = 0;
+    this.rawBeta  = 0;
+    this.status   = 'unsupported';
   },
 };
 
@@ -113,21 +135,22 @@ export const timeReader = {
 
 /**
  * When motion is unavailable, arrow keys nudge the tilt values.
- * Call startKeyboardTilt() once; it cleans up on stopKeyboardTilt().
+ * Each keypress moves tilt by STEP (0.1 = 10% of full range).
+ * Call start() once; call stop() to clean up.
  */
 export const keyboardTilt = {
   _handler: null,
 
   start() {
     if (this._handler) return; // already running
+    const STEP = 0.1;
     this._handler = (e) => {
-      const step = 0.1;
-      // NOTE: these directly mutate motionReader values as a simulation
+      // Arrow keys directly write to motionReader so the engine tick picks them up
       switch (e.key) {
-        case 'ArrowLeft':  motionReader.tiltX = clamp(motionReader.tiltX - step, -1, 1); break;
-        case 'ArrowRight': motionReader.tiltX = clamp(motionReader.tiltX + step, -1, 1); break;
-        case 'ArrowUp':    motionReader.tiltY = clamp(motionReader.tiltY - step, -1, 1); break;
-        case 'ArrowDown':  motionReader.tiltY = clamp(motionReader.tiltY + step, -1, 1); break;
+        case 'ArrowLeft':  motionReader.tiltX = clamp(motionReader.tiltX - STEP, -1, 1); break;
+        case 'ArrowRight': motionReader.tiltX = clamp(motionReader.tiltX + STEP, -1, 1); break;
+        case 'ArrowUp':    motionReader.tiltY = clamp(motionReader.tiltY - STEP, -1, 1); break;
+        case 'ArrowDown':  motionReader.tiltY = clamp(motionReader.tiltY + STEP, -1, 1); break;
       }
     };
     window.addEventListener('keydown', this._handler);

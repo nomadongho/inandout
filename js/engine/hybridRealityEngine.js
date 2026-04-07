@@ -8,23 +8,33 @@
  *
  * Usage:
  *   import engine from './hybridRealityEngine.js';
- *   engine.start();          // begin polling
- *   engine.stop();           // halt polling
- *   engine.setFallback(key, value); // push a manual slider value
+ *   engine.start();                  // begin polling
+ *   engine.stop();                   // halt polling
+ *   engine.setFallback(key, value);  // push a manual slider value
+ *   engine.currentState              // live snapshot: raw inputs + derived values
  */
 
 import { micReader, lightReader } from './environmentReader.js';
 import { batteryReader, motionReader, timeReader, keyboardTilt } from './deviceReader.js';
 import { updateDerived } from './interpreter.js';
-import { sensorRaw } from '../state.js';
+import { sensorRaw, derived } from '../state.js';
 import { clamp, smooth } from '../utils.js';
 
 // How many times per second we update the engine
 const TICK_RATE_HZ = 10;
 
+// Per-sensor smoothing factors applied in each tick (alpha: 0 = frozen, 1 = instant).
+// Tune these to balance responsiveness against noise suppression.
+const SMOOTH = {
+  noise:   0.2,   // mic responds moderately fast
+  light:   0.1,   // ambient light changes slowly
+  tilt:    0.25,  // motion responds quickly for game feel
+  battery: 0.05,  // battery barely changes; very gentle smoothing
+};
+
 /**
  * Manual override / fallback values.
- * When a real sensor is unavailable the UI writes here.
+ * When a real sensor is unavailable the UI writes here via setFallback().
  */
 const fallback = {
   noiseLevel:      50,
@@ -121,44 +131,63 @@ async function startMotion() {
   usingSensor.motion = motionReader.status === 'active';
 }
 
-/** Called TICK_RATE_HZ times per second — aggregates raw values. */
+/** Called TICK_RATE_HZ times per second — aggregates raw values then runs interpreter. */
 function _tick() {
-  // Noise
+  // ── Noise: use ring-buffered mic value or fallback slider ──────────────────
   sensorRaw.noiseLevel = usingSensor.noise
-    ? smooth(sensorRaw.noiseLevel, micReader.value, 0.2)
+    ? smooth(sensorRaw.noiseLevel, micReader.value, SMOOTH.noise)
     : fallback.noiseLevel;
 
-  // Ambient light
+  // ── Ambient light: use smoothed sensor value or fallback slider ────────────
   sensorRaw.ambientLight = usingSensor.light
-    ? smooth(sensorRaw.ambientLight, lightReader.value, 0.1)
+    ? smooth(sensorRaw.ambientLight, lightReader.value, SMOOTH.light)
     : fallback.ambientLight;
 
-  // Tilt — real or keyboard simulation
-  sensorRaw.tiltX = smooth(sensorRaw.tiltX, motionReader.tiltX, 0.25);
-  sensorRaw.tiltY = smooth(sensorRaw.tiltY, motionReader.tiltY, 0.25);
+  // ── Tilt: deadzoned device orientation or keyboard simulation ──────────────
+  // motionReader.tiltX/Y are already deadzoned (-1 to 1); smooth further here
+  sensorRaw.tiltX = smooth(sensorRaw.tiltX, motionReader.tiltX, SMOOTH.tilt);
+  sensorRaw.tiltY = smooth(sensorRaw.tiltY, motionReader.tiltY, SMOOTH.tilt);
 
-  // Battery
-  sensorRaw.batteryLevel = usingSensor.battery
-    ? batteryReader.value
-    : fallback.batteryLevel;
+  // ── Battery: real API or fallback; gently smoothed (changes very slowly) ───
+  const batteryTarget = usingSensor.battery ? batteryReader.value : fallback.batteryLevel;
+  sensorRaw.batteryLevel = smooth(sensorRaw.batteryLevel, batteryTarget, SMOOTH.battery);
 
-  // Brightness (always an in-app preference)
+  // ── Brightness: always an in-app preference controlled via setFallback() ───
   sensorRaw.brightnessLevel = fallback.brightnessLevel;
 
-  // Time of day
+  // ── Time of day: directly from system clock ────────────────────────────────
   sensorRaw.hour = timeReader.hour;
 
-  // Run the interpretation layer
+  // ── Run the interpretation layer to update derived values ──────────────────
   updateDerived();
 }
 
-// Public API
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+/**
+ * Build a clean snapshot that bundles everything modes need in one place.
+ * Modes can read `engine.currentState` instead of importing state.js directly.
+ * Both raw sensor inputs and interpreter-derived values are included.
+ *
+ * @returns {{ raw: object, derived: object, usingSensor: object, sensorStatus: object }}
+ */
+function _getCurrentState() {
+  return {
+    raw:          { ...sensorRaw },      // raw sensor inputs (0–100 or -1–1 for tilt)
+    derived:      { ...derived },        // interpreted game-state values (0–100 each)
+    usingSensor:  { ...usingSensor },    // true = real hardware, false = fallback
+    sensorStatus: getSensorStatus(),     // human-readable reader status strings
+  };
+}
+
 const engine = {
   start,
   stop,
   setFallback,
   getFallback,
   getSensorStatus,
+  /** Live snapshot of raw inputs + derived values for easy mode consumption. */
+  get currentState() { return _getCurrentState(); },
   /** Expose usingSensor flags */
   get usingSensor() { return { ...usingSensor }; },
 };
