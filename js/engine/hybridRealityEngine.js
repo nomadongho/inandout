@@ -80,15 +80,20 @@ async function start() {
 /**
  * Request microphone and motion permissions.
  * MUST be called from a user gesture (button click) — never called automatically.
- * Each permission is handled independently; one failure won't block the other.
+ * Both requests are initiated synchronously before any await so that
+ * DeviceOrientationEvent.requestPermission() (iOS 13+) is called within the
+ * original user-gesture context. Awaiting the mic request first would lose that
+ * context and cause the motion permission to be silently denied with no popup.
  */
 async function enableSensors() {
-  // Request microphone permission and start audio analysis
-  await micReader.requestPermissionAndStart();
-  usingSensor.noise = micReader.status === 'active';
+  // Kick off both requests synchronously — no await in between — so both
+  // getUserMedia() and DeviceOrientationEvent.requestPermission() fire within
+  // the same user-gesture call stack as required by iOS 13+ Safari.
+  const micPromise    = micReader.requestPermissionAndStart();
+  const motionPromise = motionReader.requestPermissionAndStart();
+  await Promise.all([micPromise, motionPromise]);
 
-  // Request motion permission (iOS 13+ requires this from a user gesture)
-  await motionReader.requestPermissionAndStart();
+  usingSensor.noise  = micReader.status  === 'active';
   usingSensor.motion = motionReader.status === 'active';
 
   // If motion is now active, keyboard simulation is no longer needed
