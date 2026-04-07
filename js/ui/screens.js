@@ -84,8 +84,10 @@ export function buildSensorScreen() {
   deniedNote.className = 'sensor-denied-note';
   deniedNote.style.display = 'none';
   deniedNote.textContent =
-    'Permission was denied. To re-enable, go to your device Settings → ' +
-    'Privacy → Microphone / Motion & Fitness and allow this site.';
+    'Permission was denied. To re-enable, go to your device Settings ' +
+    'and allow this site to access the microphone and motion sensors ' +
+    '(iOS: Settings → Privacy → Microphone / Motion & Fitness; ' +
+    'Android: Settings → Apps → Browser → Permissions).';
 
   // Prominent "Enable Sensors" button — permission is only requested on tap
   const enableBtn = buildButton('🔓 Enable Sensors', async () => {
