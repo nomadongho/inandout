@@ -1,0 +1,464 @@
+/**
+ * screens.js
+ * Build and update each game screen's DOM.
+ *
+ * Screens are single-page-app style: one <div id="app"> holds one screen at a time.
+ * Each buildXxxScreen() injects markup into #app.
+ * Each updateXxxScreen() refreshes live values without full rebuilds.
+ */
+
+import {
+  buildMeter, updateMeter, buildButton, renderLog,
+  buildSensorRow, buildRadar, showModal,
+} from './components.js';
+import { sensorRaw, derived, exploreRun, survive, ui } from '../state.js';
+import engine from '../engine/hybridRealityEngine.js';
+import { startRun, pauseRun, resumeRun, endRun } from '../modes/exploreMode.js';
+import {
+  actionExplore, actionRest, actionHide, actionRecharge, actionNextDay,
+  resetAndSave,
+} from '../modes/surviveMode.js';
+import { formatTime } from '../utils.js';
+import { navigate } from '../nav.js';
+
+// Cached references to frequently updated elements
+const cache = {};
+
+// ── HOME SCREEN ───────────────────────────────────────────────────────────────
+
+export function buildHomeScreen() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'screen screen-home';
+
+  wrap.innerHTML = `
+    <div class="home-hero">
+      <div class="home-title">IN &amp; OUT</div>
+      <div class="home-sub">A Hybrid Reality Survival Game</div>
+      <p class="home-desc">
+        Your real environment shapes this world.<br>
+        Noise, light, time, and battery affect the game.
+      </p>
+      <p class="home-note">
+        ⚠ Some sensors require permission (mic, motion).<br>
+        Fallback sliders are provided for unsupported sensors.
+      </p>
+    </div>
+    <div class="home-buttons">
+    </div>
+  `;
+
+  const btns = wrap.querySelector('.home-buttons');
+  btns.appendChild(buildButton('▶ Start Explore', () => navigate('explore'), 'btn-primary btn-large'));
+  btns.appendChild(buildButton('🏠 Start Survive', () => navigate('survive'), 'btn-secondary btn-large'));
+  btns.appendChild(buildButton('🔬 Sensor Test',   () => navigate('sensor'),  'btn-outline btn-large'));
+
+  app.appendChild(wrap);
+}
+
+// ── SENSOR TEST SCREEN ────────────────────────────────────────────────────────
+
+export function buildSensorScreen() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'screen screen-sensor';
+
+  const header = document.createElement('div');
+  header.className = 'screen-header';
+  header.innerHTML = `<h2>Sensor Test</h2>`;
+  header.appendChild(buildButton('← Home', () => navigate('home'), 'btn-outline btn-small'));
+
+  // Sensor rows container
+  const rows = document.createElement('div');
+  rows.className = 'sensor-rows';
+  rows.id        = 'sensor-rows';
+
+  // Fallback controls
+  const fallbackSection = document.createElement('div');
+  fallbackSection.className = 'fallback-section';
+  fallbackSection.innerHTML = `<h3>Fallback / Simulation Controls</h3>`;
+
+  const sliders = _buildFallbackSliders();
+  fallbackSection.appendChild(sliders);
+
+  // Tilt simulation buttons (desktop)
+  const tiltPanel = document.createElement('div');
+  tiltPanel.className = 'tilt-panel';
+  tiltPanel.innerHTML = `<p class="tilt-hint">Tilt simulation (or use arrow keys):</p>`;
+  const tiltBtns = document.createElement('div');
+  tiltBtns.className = 'tilt-buttons';
+
+  const { motionReader } = _getReaders();
+  const step = 0.2;
+  tiltBtns.appendChild(buildButton('▲', () => { motionReader.tiltY -= step; }, 'btn-tilt'));
+  tiltBtns.appendChild(buildButton('◀', () => { motionReader.tiltX -= step; }, 'btn-tilt'));
+  tiltBtns.appendChild(buildButton('●', () => { motionReader.tiltX = 0; motionReader.tiltY = 0; }, 'btn-tilt'));
+  tiltBtns.appendChild(buildButton('▶', () => { motionReader.tiltX += step; }, 'btn-tilt'));
+  tiltBtns.appendChild(buildButton('▼', () => { motionReader.tiltY += step; }, 'btn-tilt'));
+  tiltPanel.appendChild(tiltBtns);
+  fallbackSection.appendChild(tiltPanel);
+
+  wrap.appendChild(header);
+  wrap.appendChild(rows);
+  wrap.appendChild(fallbackSection);
+  app.appendChild(wrap);
+
+  // Initial render
+  updateSensorScreen();
+
+  // Live update loop
+  cache.sensorInterval = setInterval(updateSensorScreen, 500);
+}
+
+function _buildFallbackSliders() {
+  const wrap = document.createElement('div');
+  wrap.className = 'slider-group';
+
+  const items = [
+    { key: 'noiseLevel',     label: 'Noise Level',      id: 'fb-noise'    },
+    { key: 'ambientLight',   label: 'Ambient Light',    id: 'fb-light'    },
+    { key: 'batteryLevel',   label: 'Battery Level',    id: 'fb-battery'  },
+    { key: 'brightnessLevel',label: 'Brightness Pref',  id: 'fb-bright'   },
+  ];
+
+  items.forEach(({ key, label, id }) => {
+    const row = document.createElement('div');
+    row.className = 'slider-row';
+
+    const lbl = document.createElement('label');
+    lbl.htmlFor     = id;
+    lbl.textContent = label;
+
+    const input = document.createElement('input');
+    input.type  = 'range';
+    input.id    = id;
+    input.min   = '0';
+    input.max   = '100';
+    input.value = String(engine.getFallback(key));
+    input.addEventListener('input', () => {
+      engine.setFallback(key, Number(input.value));
+      valSpan.textContent = input.value;
+    });
+
+    const valSpan = document.createElement('span');
+    valSpan.className   = 'slider-val';
+    valSpan.textContent = input.value;
+
+    row.appendChild(lbl);
+    row.appendChild(input);
+    row.appendChild(valSpan);
+    wrap.appendChild(row);
+  });
+
+  return wrap;
+}
+
+export function updateSensorScreen() {
+  const rows    = document.getElementById('sensor-rows');
+  if (!rows) return;
+
+  const status = engine.getSensorStatus();
+
+  const sensors = [
+    { id: 'noise',   label: 'Noise Level',    status: status.noise,
+      val: `${Math.round(sensorRaw.noiseLevel)}` },
+    { id: 'light',   label: 'Ambient Light',  status: status.light,
+      val: `${Math.round(sensorRaw.ambientLight)}` },
+    { id: 'battery', label: 'Battery',        status: status.battery,
+      val: `${Math.round(sensorRaw.batteryLevel)}%` },
+    { id: 'motion',  label: 'Tilt X / Y',     status: status.motion,
+      val: `${sensorRaw.tiltX.toFixed(2)} / ${sensorRaw.tiltY.toFixed(2)}` },
+    { id: 'time',    label: 'Time of Day',    status: 'active',
+      val: `${sensorRaw.hour}:00` },
+    { id: 'brightness', label: 'Brightness',  status: 'active',
+      val: `${Math.round(sensorRaw.brightnessLevel)}` },
+  ];
+
+  rows.innerHTML = '';
+  sensors.forEach(s => {
+    rows.appendChild(buildSensorRow(s.id, s.label, s.status, s.val));
+  });
+}
+
+export function teardownSensorScreen() {
+  if (cache.sensorInterval) {
+    clearInterval(cache.sensorInterval);
+    cache.sensorInterval = null;
+  }
+}
+
+// ── EXPLORE SCREEN ────────────────────────────────────────────────────────────
+
+let _radar = null;
+
+export function buildExploreScreen() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  cache.exploreMeterEls = {};
+
+  const wrap = document.createElement('div');
+  wrap.className = 'screen screen-explore';
+
+  // ── Top HUD ────────────────────────────────────────────────────────────────
+  const hud = document.createElement('div');
+  hud.className = 'hud';
+  hud.id        = 'explore-hud';
+
+  const hudLeft = document.createElement('div');
+  hudLeft.className = 'hud-left';
+  hudLeft.innerHTML = `
+    <div class="hud-stat" id="hud-score">Score: 0</div>
+    <div class="hud-stat" id="hud-timer">0:00</div>
+  `;
+
+  const hudRight = document.createElement('div');
+  hudRight.className = 'hud-right';
+  hudRight.innerHTML = `<div class="hud-stat" id="hud-energy">Energy: 100%</div>`;
+
+  hud.appendChild(hudLeft);
+  hud.appendChild(hudRight);
+
+  // ── Derived state meters ───────────────────────────────────────────────────
+  const meters = document.createElement('div');
+  meters.className = 'meters-panel';
+  meters.id        = 'explore-meters';
+
+  const meterDefs = [
+    { key: 'visibility',     label: 'Visibility',     color: 'meter-blue'   },
+    { key: 'stealth',        label: 'Stealth',        color: 'meter-green'  },
+    { key: 'exposure',       label: 'Exposure',       color: 'meter-orange' },
+    { key: 'stability',      label: 'Stability',      color: 'meter-cyan'   },
+    { key: 'threatLevel',    label: 'Threat',         color: 'meter-red'    },
+    { key: 'energyModifier', label: 'Efficiency',     color: 'meter-yellow' },
+  ];
+
+  meterDefs.forEach(({ key, label, color }) => {
+    const m = buildMeter(label, derived[key], color);
+    m.id = `meter-${key}`;
+    cache.exploreMeterEls[key] = m;
+    meters.appendChild(m);
+  });
+
+  // ── Radar ──────────────────────────────────────────────────────────────────
+  _radar = buildRadar();
+  _radar.canvas.classList.add('explore-radar');
+
+  // ── Event log ─────────────────────────────────────────────────────────────
+  const logEl = document.createElement('div');
+  logEl.id        = 'explore-log';
+  logEl.className = 'event-log';
+
+  // ── Bottom action bar ──────────────────────────────────────────────────────
+  const bar = document.createElement('div');
+  bar.className = 'action-bar';
+  bar.id        = 'explore-action-bar';
+
+  cache.btnPauseResume = buildButton('⏸ Pause', _handlePauseResume, 'btn-secondary');
+  const btnEnd = buildButton('■ End Run', () => {
+    endRun('player');
+  }, 'btn-danger');
+  const btnHome = buildButton('← Home', () => {
+    endRun('player');
+    navigate('home');
+  }, 'btn-outline');
+
+  bar.appendChild(cache.btnPauseResume);
+  bar.appendChild(btnEnd);
+  bar.appendChild(btnHome);
+
+  wrap.appendChild(hud);
+  wrap.appendChild(meters);
+  wrap.appendChild(_radar.canvas);
+  wrap.appendChild(logEl);
+  wrap.appendChild(bar);
+  app.appendChild(wrap);
+
+  // Start the run, hook update callback
+  startRun(_onExploreUpdate);
+}
+
+function _handlePauseResume() {
+  if (exploreRun.paused) {
+    resumeRun();
+    cache.btnPauseResume.textContent = '⏸ Pause';
+  } else {
+    pauseRun();
+    cache.btnPauseResume.textContent = '▶ Resume';
+  }
+}
+
+function _onExploreUpdate(event) {
+  if (event === 'end') {
+    _showRunSummary();
+    return;
+  }
+  _refreshExploreHUD();
+}
+
+function _refreshExploreHUD() {
+  const scoreEl  = document.getElementById('hud-score');
+  const timerEl  = document.getElementById('hud-timer');
+  const energyEl = document.getElementById('hud-energy');
+  const logEl    = document.getElementById('explore-log');
+
+  if (scoreEl)  scoreEl.textContent  = `Score: ${Math.floor(exploreRun.score)}`;
+  if (timerEl)  timerEl.textContent  = formatTime(exploreRun.elapsed);
+  if (energyEl) energyEl.textContent = `Energy: ${Math.round(exploreRun.energy)}%`;
+
+  // Update meters
+  if (cache.exploreMeterEls) {
+    Object.keys(cache.exploreMeterEls).forEach(key => {
+      updateMeter(cache.exploreMeterEls[key], derived[key]);
+    });
+  }
+
+  // Radar
+  if (_radar) _radar.draw(exploreRun.enemies, derived.threatLevel);
+
+  // Log
+  if (logEl) renderLog(logEl, exploreRun.log);
+}
+
+function _showRunSummary() {
+  const body = `
+    <p>Score: <strong>${Math.floor(exploreRun.score)}</strong></p>
+    <p>Survived: <strong>${formatTime(exploreRun.elapsed)}</strong></p>
+    <p>Final Energy: <strong>${Math.round(exploreRun.energy)}%</strong></p>
+  `;
+  showModal('Run Complete', body, 'Back to Home', () => navigate('home'));
+}
+
+// ── SURVIVE SCREEN ────────────────────────────────────────────────────────────
+
+export function buildSurviveScreen() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  cache.surviveMeterEls = {};
+
+  const wrap = document.createElement('div');
+  wrap.className = 'screen screen-survive';
+
+  // ── Top info panel ────────────────────────────────────────────────────────
+  const infoPanel = document.createElement('div');
+  infoPanel.className = 'survive-info';
+  infoPanel.id        = 'survive-info';
+
+  // Day counter is rendered via updateSurviveScreen
+
+  // ── Resource meters ────────────────────────────────────────────────────────
+  const meters = document.createElement('div');
+  meters.className = 'meters-panel';
+  meters.id        = 'survive-meters';
+
+  const meterDefs = [
+    { key: 'resources',     label: 'Resources',       color: 'meter-green'  },
+    { key: 'health',        label: 'Health',          color: 'meter-blue'   },
+    { key: 'stress',        label: 'Stress',          color: 'meter-orange' },
+    { key: 'shelterEnergy', label: 'Shelter Energy',  color: 'meter-cyan'   },
+  ];
+  meterDefs.forEach(({ key, label, color }) => {
+    const m = buildMeter(label, survive[key], color);
+    m.id = `smeter-${key}`;
+    cache.surviveMeterEls[key] = m;
+    meters.appendChild(m);
+  });
+
+  // ── Environment summary ───────────────────────────────────────────────────
+  const envSummary = document.createElement('div');
+  envSummary.className = 'env-summary';
+  envSummary.id        = 'survive-env';
+
+  // ── Event log ─────────────────────────────────────────────────────────────
+  const logEl = document.createElement('div');
+  logEl.id        = 'survive-log';
+  logEl.className = 'event-log';
+
+  // ── Action bar ────────────────────────────────────────────────────────────
+  const bar = document.createElement('div');
+  bar.className = 'action-bar action-bar-survive';
+
+  const actions = [
+    { label: '🔍 Explore',  fn: () => { actionExplore();  updateSurviveScreen(); } },
+    { label: '😴 Rest',      fn: () => { actionRest();     updateSurviveScreen(); } },
+    { label: '🫥 Hide',      fn: () => { actionHide();     updateSurviveScreen(); } },
+    { label: '🔋 Recharge',  fn: () => { actionRecharge(); updateSurviveScreen(); } },
+    { label: '🌅 Next Day',  fn: () => { actionNextDay();  updateSurviveScreen(); } },
+  ];
+
+  actions.forEach(({ label, fn }) => {
+    bar.appendChild(buildButton(label, fn, 'btn-action'));
+  });
+
+  // Extra row: home + new game
+  const extraBar = document.createElement('div');
+  extraBar.className = 'action-bar-extra';
+  extraBar.appendChild(buildButton('← Home', () => navigate('home'), 'btn-outline btn-small'));
+  extraBar.appendChild(buildButton('🔄 New Game', () => {
+    if (confirm('Start a new game? Current save will be lost.')) {
+      resetAndSave();
+      updateSurviveScreen();
+    }
+  }, 'btn-danger btn-small'));
+
+  wrap.appendChild(infoPanel);
+  wrap.appendChild(meters);
+  wrap.appendChild(envSummary);
+  wrap.appendChild(logEl);
+  wrap.appendChild(bar);
+  wrap.appendChild(extraBar);
+  app.appendChild(wrap);
+
+  updateSurviveScreen();
+}
+
+export function updateSurviveScreen() {
+  const infoEl = document.getElementById('survive-info');
+  const envEl  = document.getElementById('survive-env');
+  const logEl  = document.getElementById('survive-log');
+
+  if (infoEl) {
+    infoEl.innerHTML = `<div class="day-counter">Day ${survive.day}</div>`;
+  }
+
+  if (envEl) {
+    const hour = sensorRaw.hour;
+    const period = hour < 6 ? 'Night' : hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening';
+    envEl.innerHTML = `
+      <div class="env-row">🕐 ${period} (${hour}:00)</div>
+      <div class="env-row">🔊 Noise: ${Math.round(sensorRaw.noiseLevel)}</div>
+      <div class="env-row">💡 Light: ${Math.round(sensorRaw.ambientLight)}</div>
+      <div class="env-row">⚡ Threat: ${Math.round(derived.threatLevel)}</div>
+      <div class="env-row">👁 Stealth: ${Math.round(derived.stealth)}</div>
+    `;
+  }
+
+  // Update resource meters
+  if (cache.surviveMeterEls) {
+    Object.keys(cache.surviveMeterEls).forEach(key => {
+      updateMeter(cache.surviveMeterEls[key], survive[key]);
+    });
+  }
+
+  if (logEl) renderLog(logEl, survive.log);
+}
+
+// ── Helper to get readers without importing at top level (avoid circular) ────
+
+function _getReaders() {
+  // We need to import motionReader lazily to avoid cycles.
+  // This is a thin wrapper that returns the live object.
+  return {
+    // eslint-disable-next-line no-undef
+    motionReader: _motionReaderRef,
+  };
+}
+
+// Assigned lazily by app.js after engine starts
+export let _motionReaderRef = { tiltX: 0, tiltY: 0 };
+export function setMotionReaderRef(ref) {
+  _motionReaderRef = ref;
+}
