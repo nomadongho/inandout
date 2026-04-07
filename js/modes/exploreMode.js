@@ -30,6 +30,13 @@ const MAX_ENEMIES          = 5;
 const ENERGY_DECAY_BASE    = 0.25;  // energy lost per tick from passive drain
 const EVENT_CHANCE_BASE    = 0.07;  // base chance per tick a random event fires
 const EVENT_COOLDOWN_TICKS = 6;     // ticks before the same event can fire again
+// Sensor influence adjustments applied when an event fires
+const INFLUENCE_DANGER_ADD = 4;     // how much a danger event worsens sensor influence
+const INFLUENCE_BONUS_SUB  = 2;     // how much a bonus event improves sensor influence
+// Approximate energy loss recorded per danger event for cause-of-failure tracking.
+// The actual amount varies by event; this fixed value is a representative estimate
+// used only for relative comparison in the end-of-run summary.
+const CAUSE_APPROX_ENERGY  = 10;
 
 // ── Expanded event pool ───────────────────────────────────────────────────────
 // type: 'danger' | 'bonus' | 'warn'
@@ -197,8 +204,10 @@ function spawnEnemy() {
 }
 
 // ── Internal tick state ───────────────────────────────────────────────────────
-let _tickIntervalId = null;
-let _onUpdate       = null;
+let _tickIntervalId    = null;
+let _onUpdate          = null;
+/** Tracks the last score tier announced, to fire the milestone exactly once. */
+let _lastAnnouncedTier = 0;
 
 /** Per-event cooldown map: eventId → remaining ticks */
 const _eventCooldowns = new Map();
@@ -235,6 +244,7 @@ export function startRun(onUpdate) {
   _onUpdate = onUpdate;
 
   _eventCooldowns.clear();
+  _lastAnnouncedTier = 0;
   Object.keys(_sensorInfluence).forEach(k => (_sensorInfluence[k] = 0));
   Object.keys(_energyLossCauses).forEach(k => (_energyLossCauses[k] = 0));
 
@@ -302,8 +312,9 @@ function _gameTick() {
   const scoreTier       = Math.floor(exploreRun.elapsed / SCORE_TIER_SECS);
   const scoreMultiplier = 1 + scoreTier * 0.25;
 
-  // Announce tier increase (fire once when the boundary is crossed)
-  if (scoreTier > 0 && exploreRun.elapsed % SCORE_TIER_SECS < tickSec) {
+  // Announce each tier increase exactly once
+  if (scoreTier > _lastAnnouncedTier) {
+    _lastAnnouncedTier = scoreTier;
     _pushLog(
       `⭐ ${formatTime(exploreRun.elapsed)} — Score ×${scoreMultiplier.toFixed(2)} now!`,
       'bonus',
@@ -424,12 +435,12 @@ function _fireEventMaybe() {
 
   // Update sensor influence from this event
   if (ev.tag && ev.tag in _sensorInfluence) {
-    _sensorInfluence[ev.tag] += ev.type === 'danger' ? 4 : -2;
+    _sensorInfluence[ev.tag] += ev.type === 'danger' ? INFLUENCE_DANGER_ADD : -INFLUENCE_BONUS_SUB;
   }
 
-  // Approximate energy-loss tracking for cause reporting
+  // Record approximate energy loss per cause for end-of-run summary comparison
   if (ev.type === 'danger' && ev.tag in _energyLossCauses) {
-    _energyLossCauses[ev.tag] += 10;
+    _energyLossCauses[ev.tag] += CAUSE_APPROX_ENERGY;
   }
 
   // Apply cooldown so the event cannot fire again immediately
