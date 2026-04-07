@@ -16,7 +16,7 @@ import engine from '../engine/hybridRealityEngine.js';
 import { startRun, pauseRun, resumeRun, endRun } from '../modes/exploreMode.js';
 import {
   actionExplore, actionRest, actionHide, actionRecharge, actionNextDay,
-  resetAndSave,
+  resetAndSave, getSurviveAdvice,
 } from '../modes/surviveMode.js';
 import { formatTime } from '../utils.js';
 import { navigate } from '../nav.js';
@@ -454,6 +454,19 @@ export function buildSurviveScreen() {
   app.appendChild(wrap);
 
   updateSurviveScreen();
+
+  // Refresh env summary every 5 s so sensor changes are reflected without an action
+  cache.surviveEnvInterval = setInterval(() => {
+    const envEl = document.getElementById('survive-env');
+    if (envEl) _renderSurviveEnv(envEl);
+  }, 5000);
+}
+
+export function teardownSurviveScreen() {
+  if (cache.surviveEnvInterval) {
+    clearInterval(cache.surviveEnvInterval);
+    cache.surviveEnvInterval = null;
+  }
 }
 
 export function updateSurviveScreen() {
@@ -462,20 +475,28 @@ export function updateSurviveScreen() {
   const logEl  = document.getElementById('survive-log');
 
   if (infoEl) {
-    infoEl.innerHTML = `<div class="day-counter">Day ${survive.day}</div>`;
-  }
+    // Collect critical-state badges
+    const badges = [];
+    if (survive.health <= 0)        badges.push('<span class="survive-crit">💀 Health Fail</span>');
+    else if (survive.health < 20)   badges.push('<span class="survive-crit">⚠ Critical Health</span>');
+    else if (survive.health < 40)   badges.push('<span class="survive-warn">⚡ Low Health</span>');
+    if (survive.resources <= 0)     badges.push('<span class="survive-crit">⚠ No Resources</span>');
+    else if (survive.resources < 15) badges.push('<span class="survive-warn">⚡ Low Resources</span>');
+    if (survive.stress > 85)        badges.push('<span class="survive-crit">⚠ Stress Critical</span>');
+    else if (survive.stress > 70)   badges.push('<span class="survive-warn">⚡ High Stress</span>');
+    if (survive.shelterEnergy < 10) badges.push('<span class="survive-crit">⚠ Shelter Failing</span>');
+    else if (survive.shelterEnergy < 25) badges.push('<span class="survive-warn">⚡ Power Low</span>');
 
-  if (envEl) {
-    const hour = sensorRaw.hour;
-    const period = hour < 6 ? 'Night' : hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening';
-    envEl.innerHTML = `
-      <div class="env-row">🕐 ${period} (${hour}:00)</div>
-      <div class="env-row">🔊 Noise: ${Math.round(sensorRaw.noiseLevel)}</div>
-      <div class="env-row">💡 Light: ${Math.round(sensorRaw.ambientLight)}</div>
-      <div class="env-row">⚡ Threat: ${Math.round(derived.threatLevel)}</div>
-      <div class="env-row">👁 Stealth: ${Math.round(derived.stealth)}</div>
+    const advice = getSurviveAdvice();
+
+    infoEl.innerHTML = `
+      <div class="day-counter">Day ${survive.day}</div>
+      ${badges.length ? `<div class="survive-status-row">${badges.join('')}</div>` : ''}
+      ${advice ? `<div class="survive-advice">${advice}</div>` : ''}
     `;
   }
+
+  if (envEl) _renderSurviveEnv(envEl);
 
   // Update resource meters
   if (cache.surviveMeterEls) {
@@ -485,6 +506,49 @@ export function updateSurviveScreen() {
   }
 
   if (logEl) renderLog(logEl, survive.log);
+}
+
+/** Render the environment summary panel (also called on interval). */
+function _renderSurviveEnv(envEl) {
+  const hour   = sensorRaw.hour;
+  const period = hour < 6 ? 'Night' : hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening';
+
+  const noiseVal = Math.round(sensorRaw.noiseLevel);
+  const noiseCond = noiseVal > 70
+    ? '<span class="cond-bad">VERY NOISY</span>'
+    : noiseVal > 45
+      ? '<span class="cond-warn">NOISY</span>'
+      : '<span class="cond-good">QUIET</span>';
+
+  const lightVal = Math.round(sensorRaw.ambientLight);
+  const lightCond = lightVal < 25
+    ? '<span class="cond-good">DARK</span>'
+    : lightVal > 65
+      ? '<span class="cond-warn">BRIGHT</span>'
+      : '<span class="cond-ok">DIM</span>';
+
+  const battVal = Math.round(derived.energyModifier);
+  const battCond = battVal < 30
+    ? '<span class="cond-bad">LOW</span>'
+    : battVal > 70
+      ? '<span class="cond-good">HIGH</span>'
+      : '<span class="cond-ok">OK</span>';
+
+  const stealthVal = Math.round(derived.stealth);
+  const stealthCond = stealthVal > 65
+    ? '<span class="cond-good">CONCEALED</span>'
+    : stealthVal < 35
+      ? '<span class="cond-bad">EXPOSED</span>'
+      : '<span class="cond-ok">MODERATE</span>';
+
+  envEl.innerHTML = `
+    <div class="env-row">🕐 ${period} (${hour}:00)</div>
+    <div class="env-row">🔊 Noise: ${noiseCond}</div>
+    <div class="env-row">💡 Light: ${lightCond}</div>
+    <div class="env-row">🔋 Power: ${battCond}</div>
+    <div class="env-row">👁 Stealth: ${stealthCond}</div>
+    <div class="env-row">⚠ Threat: ${Math.round(derived.threatLevel)}</div>
+  `;
 }
 
 // ── Motion reader ref — assigned by app.js after engine starts ───────────────
