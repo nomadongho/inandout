@@ -80,13 +80,16 @@ const EVENT_POOL = [
 
 // ── Simple enemy type ─────────────────────────────────────────────────────────
 let _enemyId = 0;
+// Scales enemy speed by threat level — higher threat produces faster enemies
+const THREAT_SPEED_MULTIPLIER = 1 / 100; // per threat unit above baseline
+
 function spawnEnemy() {
   // Enemies live in a 0–100 × 0–100 abstract grid
   return {
     id:    _enemyId++,
     x:     pickRandom([0, 100, randInt(0, 100)]),
     y:     pickRandom([0, 100, randInt(0, 100)]),
-    speed: randFloat(0.5, 2.0) * (1 + derived.threatLevel / 100),
+    speed: randFloat(0.5, 2.0) * (1 + derived.threatLevel * THREAT_SPEED_MULTIPLIER),
   };
 }
 

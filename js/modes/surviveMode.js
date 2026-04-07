@@ -112,12 +112,13 @@ export function actionRest() {
   }
 
   const resourceCost = 5;
-  survive.stress        = clamp(survive.stress    - recovery,      0, 100);
-  survive.health        = clamp(survive.health    + randInt(2, 5), 0, 100);
-  survive.resources     = clamp(survive.resources - resourceCost,  0, 100);
-  survive.shelterEnergy = clamp(survive.shelterEnergy - 3,         0, 100);
+  const healthGain = randInt(2, 5);
+  survive.stress        = clamp(survive.stress    - recovery,   0, 100);
+  survive.health        = clamp(survive.health    + healthGain, 0, 100);
+  survive.resources     = clamp(survive.resources - resourceCost, 0, 100);
+  survive.shelterEnergy = clamp(survive.shelterEnergy - 3,        0, 100);
 
-  _log(`Stress −${recovery}. Health +${randInt(2, 5)}. Resources −${resourceCost}.`);
+  _log(`Stress −${recovery}. Health +${healthGain}. Resources −${resourceCost}.`);
   saveSurvive();
 }
 

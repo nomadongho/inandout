@@ -92,7 +92,7 @@ export function buildSensorScreen() {
   const tiltBtns = document.createElement('div');
   tiltBtns.className = 'tilt-buttons';
 
-  const { motionReader } = _getReaders();
+  const motionReader = _motionReaderRef;
   const step = 0.2;
   tiltBtns.appendChild(buildButton('▲', () => { motionReader.tiltY -= step; }, 'btn-tilt'));
   tiltBtns.appendChild(buildButton('◀', () => { motionReader.tiltX -= step; }, 'btn-tilt'));
@@ -446,16 +446,7 @@ export function updateSurviveScreen() {
   if (logEl) renderLog(logEl, survive.log);
 }
 
-// ── Helper to get readers without importing at top level (avoid circular) ────
-
-function _getReaders() {
-  // We need to import motionReader lazily to avoid cycles.
-  // This is a thin wrapper that returns the live object.
-  return {
-    // eslint-disable-next-line no-undef
-    motionReader: _motionReaderRef,
-  };
-}
+// ── Motion reader ref — assigned by app.js after engine starts ───────────────
 
 // Assigned lazily by app.js after engine starts
 export let _motionReaderRef = { tiltX: 0, tiltY: 0 };
