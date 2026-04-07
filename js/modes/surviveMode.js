@@ -76,7 +76,7 @@ function _env() {
  */
 export function actionExplore() {
   const env = _env();
-  _log('— EXPLORE —', 'info');
+  _log('— EXPLORE —', 'action');
 
   let found          = randInt(5, 15);
   let encounterChance = 0.18 + derived.exposure / 200 + derived.threatLevel / 200;
@@ -158,7 +158,7 @@ export function actionExplore() {
  */
 export function actionRest() {
   const env = _env();
-  _log('— REST —', 'info');
+  _log('— REST —', 'action');
 
   let stressRecovery = randInt(10, 20);
   let healthGain     = randInt(2, 5);
@@ -227,7 +227,7 @@ export function actionRest() {
  */
 export function actionHide() {
   const env = _env();
-  _log('— HIDE —', 'info');
+  _log('— HIDE —', 'action');
 
   let stressChange = 0;
   const resourceCost = 3;
@@ -291,7 +291,7 @@ export function actionHide() {
  */
 export function actionRecharge() {
   const env = _env();
-  _log('— RECHARGE —', 'info');
+  _log('— RECHARGE —', 'action');
 
   const cost = 8;
 
@@ -331,7 +331,7 @@ export function actionRecharge() {
  * Passive consumption, stress-driven health decay, random day event.
  */
 export function actionNextDay() {
-  _log(`══ END OF DAY ${survive.day} ══`, 'info');
+  _log(`══ END OF DAY ${survive.day} ══`, 'action');
 
   survive.day += 1;
 

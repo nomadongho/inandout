@@ -16,13 +16,14 @@ import { setNavigate } from './nav.js';
 import {
   buildHomeScreen,
   buildSensorScreen,   teardownSensorScreen,
-  buildExploreScreen,
+  buildExploreScreen,  teardownExploreScreen,
   buildSurviveScreen,  teardownSurviveScreen,
 } from './ui/screens.js';
 
 /** Map of screen teardown callbacks */
 const teardowns = {
   sensor:  teardownSensorScreen,
+  explore: teardownExploreScreen,
   survive: teardownSurviveScreen,
 };
 
