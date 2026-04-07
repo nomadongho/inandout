@@ -39,6 +39,13 @@ const EVENT_COOLDOWN_TICKS  = 50;    // ticks (~5 s) before same event can repea
 const PLAYER_SPEED          = 0.55;  // grid units per tick per unit of tilt
 const STUMBLE_TILT_DELTA    = 0.30;  // tilt change per tick that triggers stumble
 const STUMBLE_COOLDOWN_TICKS= 20;    // ticks before another stumble can happen
+const ENEMY_CATCH_DIST      = 6;     // grid-units distance at which an enemy catches the player
+
+// Patrol behaviour (enemy movement when not alerted)
+const PATROL_ANGLE_STEP     = 0.05;  // radians per tick; controls patrol speed
+const PATROL_SPEED_FRAC     = 0.8;   // fraction of base speed used for patrol movement
+const PATROL_Y_FREQ         = 0.7;   // Y-axis frequency ratio; <1 creates figure-8 shape
+const PATROL_HOMING_FRAC    = 0.15;  // weak homing fraction to prevent wandering off-screen
 
 // Stealth / detection
 const NOISE_THRESHOLD       = 38;    // noise level that alerts nearby enemies
@@ -210,7 +217,7 @@ const EVENT_POOL = [
 // ── Night-time helper ─────────────────────────────────────────────────────────
 /** Returns true when the current hour is in the night range (20:00–05:59). */
 function _isNightTime() {
-  const h = sensorRaw.hour;
+  const h = typeof sensorRaw.hour === 'number' ? sensorRaw.hour : 0;
   return h >= 20 || h < 6;
 }
 
@@ -274,7 +281,10 @@ export function startRun(onUpdate) {
   _lastAnnouncedTier = 0;
   // Seed _prevTiltMag to the current tilt magnitude to avoid a false
   // stumble on the very first tick when the value was 0.
-  _prevTiltMag       = Math.sqrt(sensorRaw.tiltX ** 2 + sensorRaw.tiltY ** 2);
+  // Default to 0 if sensor values are not yet populated (avoids NaN).
+  const tx0 = typeof sensorRaw.tiltX === 'number' ? sensorRaw.tiltX : 0;
+  const ty0 = typeof sensorRaw.tiltY === 'number' ? sensorRaw.tiltY : 0;
+  _prevTiltMag       = Math.sqrt(tx0 ** 2 + ty0 ** 2);
   _stumbleCooldown   = 0;
   _detectionCooldown = 0;
   _noiseCooldown     = 0;
@@ -447,8 +457,8 @@ function _gameTick() {
 // ── Movement ──────────────────────────────────────────────────────────────────
 
 function _movePlayer(tickSec) {
-  const tx = sensorRaw.tiltX;
-  const ty = sensorRaw.tiltY;
+  const tx = typeof sensorRaw.tiltX === 'number' ? sensorRaw.tiltX : 0;
+  const ty = typeof sensorRaw.tiltY === 'number' ? sensorRaw.tiltY : 0;
 
   // Stumble check: sudden spike in tilt magnitude
   const tiltMag  = Math.sqrt(tx * tx + ty * ty);
@@ -583,7 +593,6 @@ function _spawnEnemyMaybe() {
 function _updateEnemies() {
   const pX = exploreRun.player.x;
   const pY = exploreRun.player.y;
-  const CATCH_DIST = 6;
 
   exploreRun.enemies = exploreRun.enemies.filter(e => {
     const dx   = pX - e.x;
@@ -607,21 +616,18 @@ function _updateEnemies() {
       }
     } else {
       // Patrol: approximate figure-8 using two overlaid sine waves.
-      // 0.05 = angle increment per tick; 0.8 = fraction of speed used for patrol;
-      // 0.7 = frequency ratio for Y-axis to create the figure-8 shape;
-      // 0.15 = weak homing fraction that prevents enemies from wandering off-screen.
-      e.patrolAngle += e.patrolSpeed * 0.05;
-      const patrolDx = Math.cos(e.patrolAngle) * speed * 0.8;
-      const patrolDy = Math.sin(e.patrolAngle * 0.7) * speed * 0.8;
-      const homingDx = (dx / dist) * speed * 0.15;
-      const homingDy = (dy / dist) * speed * 0.15;
+      e.patrolAngle += e.patrolSpeed * PATROL_ANGLE_STEP;
+      const patrolDx = Math.cos(e.patrolAngle) * speed * PATROL_SPEED_FRAC;
+      const patrolDy = Math.sin(e.patrolAngle * PATROL_Y_FREQ) * speed * PATROL_SPEED_FRAC;
+      const homingDx = (dx / dist) * speed * PATROL_HOMING_FRAC;
+      const homingDy = (dy / dist) * speed * PATROL_HOMING_FRAC;
       e.x = clamp(e.x + patrolDx + homingDx, 1, 99);
       e.y = clamp(e.y + patrolDy + homingDy, 1, 99);
     }
 
-    // Catch check
+    // Catch check — uses module-level ENEMY_CATCH_DIST
     const newDist = Math.sqrt((pX - e.x) ** 2 + (pY - e.y) ** 2);
-    if (newDist < CATCH_DIST) {
+    if (newDist < ENEMY_CATCH_DIST) {
       const dmg = randInt(10, 22);
       exploreRun.energy = clamp(exploreRun.energy - dmg, 0, 100);
       _energyLossCauses.enemies += dmg;

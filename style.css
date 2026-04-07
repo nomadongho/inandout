@@ -798,3 +798,20 @@ html, body {
   color: var(--accent2);
   font-weight: 700;
 }
+
+/* ── Accessibility: reduced motion ───────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all pulsing / flashing animations for users who prefer
+     reduced motion (helps photosensitive users). */
+  .player-state-badge.state-stealth,
+  .player-state-badge.state-detected,
+  .explore-danger-bar.is-high,
+  .survive-crit,
+  .screen-explore.detection-flash,
+  .home-title {
+    animation: none;
+  }
+  .meter-fill {
+    transition: none;
+  }
+}

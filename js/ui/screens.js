@@ -342,7 +342,7 @@ export function buildExploreScreen() {
 
 /** rAF loop: redraws game canvas at display rate (~60 fps) for smooth visuals. */
 function _canvasLoop(timestamp) {
-  if (_gameCanvas && exploreRun.active) {
+  if (_gameCanvas && exploreRun.active && document.contains(_gameCanvas.canvas)) {
     _gameCanvas.draw({
       player:         exploreRun.player,
       enemies:        exploreRun.enemies,
