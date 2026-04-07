@@ -4,7 +4,7 @@
  *
  * Same pattern as environmentReader:
  *  - start() / stop()
- *  - status    ('unsupported' | 'permission-required' | 'active' | 'error')
+ *  - status    ('using-simulation' | 'permission-needed' | 'active' | 'denied' | 'unsupported')
  *  - value(s)
  *  - rawValue  (pre-normalised hardware reading where applicable)
  */
@@ -14,14 +14,15 @@ import { clamp } from '../utils.js';
 // ─── Battery ─────────────────────────────────────────────────────────────────
 
 export const batteryReader = {
-  status:   'unsupported',
+  status:   'using-simulation', // 'using-simulation' | 'active'
   value:    80,   // 0–100 battery %
   rawValue: 0,    // raw level fraction from the Battery API (0.0–1.0)
   _battery: null,
 
   async start() {
     if (!navigator.getBattery) {
-      this.status = 'unsupported';
+      // Battery Status API absent (Firefox, Safari, iOS) — use slider
+      this.status = 'using-simulation';
       return;
     }
     try {
@@ -38,14 +39,15 @@ export const batteryReader = {
       battery.addEventListener('levelchange', update);
     } catch (err) {
       console.warn('[battery] Error:', err);
-      this.status = 'error';
+      // Any error — silently fall back to simulation
+      this.status = 'using-simulation';
     }
   },
 
   stop() {
     this._battery = null;
     this.rawValue = 0;
-    this.status   = 'unsupported';
+    this.status   = 'using-simulation';
   },
 };
 
@@ -56,35 +58,73 @@ export const batteryReader = {
 const TILT_DEADZONE_DEG = 2;
 
 export const motionReader = {
-  status:   'unsupported',
+  status:   'using-simulation', // 'using-simulation' | 'permission-needed' | 'active' | 'denied' | 'unsupported'
   tiltX:    0,    // -1 to 1  (left–right,  normalised from gamma)
   tiltY:    0,    // -1 to 1  (front–back,  normalised from beta)
   rawGamma: 0,    // raw gamma in degrees (-90 to 90)
   rawBeta:  0,    // raw beta  in degrees (-180 to 180)
   _handler: null,
 
+  /**
+   * Detect motion sensor support and set initial status.
+   * On iOS 13+, DeviceOrientationEvent.requestPermission exists and requires a user gesture.
+   * In that case we just mark status as 'permission-needed' without requesting.
+   * On other platforms, start the listener directly if the API is available.
+   */
   async start() {
     if (!window.DeviceOrientationEvent) {
-      this.status = 'unsupported';
+      this.status = 'using-simulation';
       return;
     }
 
-    // iOS 13+ requires explicit permission
+    // iOS 13+ requires explicit permission from a user gesture
     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      this.status = 'permission-required';
+      // Don't request now — mark as needing permission, wait for Enable Sensors button
+      this.status = 'permission-needed';
+      return;
+    }
+
+    // Non-iOS: start the listener directly (no permission prompt needed)
+    this._attachListener();
+    this.status = 'active';
+  },
+
+  /**
+   * Request iOS motion permission and start the listener.
+   * MUST be called from a user gesture (e.g. button click).
+   * On non-iOS this is a no-op if already active; otherwise calls start().
+   */
+  async requestPermissionAndStart() {
+    if (!window.DeviceOrientationEvent) {
+      this.status = 'using-simulation';
+      return;
+    }
+
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS permission flow
       try {
         const result = await DeviceOrientationEvent.requestPermission();
-        if (result !== 'granted') {
-          this.status = 'error';
-          return;
+        if (result === 'granted') {
+          this._attachListener();
+          this.status = 'active';
+        } else {
+          console.warn('[motion] Permission not granted:', result);
+          this.status = 'denied';
         }
       } catch (err) {
         console.warn('[motion] Permission error:', err);
-        this.status = 'error';
-        return;
+        this.status = 'denied';
       }
+    } else if (this.status !== 'active') {
+      // Non-iOS fallback: start directly if not already running
+      this._attachListener();
+      this.status = 'active';
     }
+  },
 
+  /** Attach the deviceorientation event handler. */
+  _attachListener() {
+    if (this._handler) return; // already attached
     this._handler = (event) => {
       // gamma = left/right tilt (-90 to 90 degrees)
       // beta  = front/back tilt (-180 to 180 degrees)
@@ -102,9 +142,7 @@ export const motionReader = {
       this.tiltX = clamp(effectiveGamma / 90, -1, 1);
       this.tiltY = clamp(effectiveBeta  / 90, -1, 1);
     };
-
     window.addEventListener('deviceorientation', this._handler);
-    this.status = 'active';
   },
 
   stop() {
@@ -116,7 +154,7 @@ export const motionReader = {
     this.tiltY    = 0;
     this.rawGamma = 0;
     this.rawBeta  = 0;
-    this.status   = 'unsupported';
+    this.status   = 'using-simulation';
   },
 };
 

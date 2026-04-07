@@ -156,10 +156,14 @@ export function buildSensorRow(id, label, status, valueStr) {
   lbl.textContent = label;
 
   const statusMap = {
-    'active':             { text: 'ACTIVE',    type: 'ok'    },
-    'permission-required':{ text: 'PERM REQ',  type: 'warn'  },
-    'unsupported':        { text: 'NO SENSOR', type: 'off'   },
-    'error':              { text: 'ERROR',     type: 'error' },
+    'active':             { text: 'ACTIVE',            type: 'ok'    },
+    'permission-needed':  { text: 'PERMISSION NEEDED', type: 'warn'  },
+    'using-simulation':   { text: 'USING SIMULATION',  type: 'off'   },
+    'unsupported':        { text: 'UNSUPPORTED',       type: 'off'   },
+    'denied':             { text: 'DENIED',            type: 'error' },
+    // legacy values kept for safety
+    'permission-required':{ text: 'PERMISSION NEEDED', type: 'warn'  },
+    'error':              { text: 'ERROR',             type: 'error' },
   };
   const s   = statusMap[status] || statusMap['unsupported'];
   const bdg = buildBadge(s.text, s.type);

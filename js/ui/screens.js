@@ -72,6 +72,23 @@ export function buildSensorScreen() {
   header.innerHTML = `<h2>Sensor Test</h2>`;
   header.appendChild(buildButton('← Home', () => navigate('home'), 'btn-outline btn-small'));
 
+  // Help note explaining sensor behaviour
+  const helpNote = document.createElement('p');
+  helpNote.className = 'sensor-help-note';
+  helpNote.textContent =
+    'Some mobile browsers block sensors until you tap Enable Sensors. ' +
+    'If a sensor is unavailable, simulation controls will be used instead.';
+
+  // Prominent "Enable Sensors" button — permission is only requested on tap
+  const enableBtn = buildButton('🔓 Enable Sensors', async () => {
+    enableBtn.disabled    = true;
+    enableBtn.textContent = 'Requesting…';
+    await engine.enableSensors();
+    enableBtn.textContent = 'Sensors Enabled';
+    // Immediately refresh the sensor rows to reflect new statuses
+    updateSensorScreen();
+  }, 'btn-primary btn-enable-sensors');
+
   // Sensor rows container
   const rows = document.createElement('div');
   rows.className = 'sensor-rows';
@@ -80,12 +97,13 @@ export function buildSensorScreen() {
   // Fallback controls
   const fallbackSection = document.createElement('div');
   fallbackSection.className = 'fallback-section';
-  fallbackSection.innerHTML = `<h3>Fallback / Simulation Controls</h3>`;
+  fallbackSection.innerHTML = `<h3>Simulation Controls</h3>
+    <p class="fallback-note">These sliders are always active. Real sensors override them when available.</p>`;
 
   const sliders = _buildFallbackSliders();
   fallbackSection.appendChild(sliders);
 
-  // Tilt simulation buttons (desktop)
+  // Tilt simulation buttons (desktop / iOS before permission)
   const tiltPanel = document.createElement('div');
   tiltPanel.className = 'tilt-panel';
   tiltPanel.innerHTML = `<p class="tilt-hint">Tilt simulation (or use arrow keys):</p>`;
@@ -103,6 +121,8 @@ export function buildSensorScreen() {
   fallbackSection.appendChild(tiltPanel);
 
   wrap.appendChild(header);
+  wrap.appendChild(helpNote);
+  wrap.appendChild(enableBtn);
   wrap.appendChild(rows);
   wrap.appendChild(fallbackSection);
   app.appendChild(wrap);
@@ -174,7 +194,7 @@ export function updateSensorScreen() {
       val: `${sensorRaw.tiltX.toFixed(2)} / ${sensorRaw.tiltY.toFixed(2)}` },
     { id: 'time',    label: 'Time of Day',    status: 'active',
       val: `${sensorRaw.hour}:00` },
-    { id: 'brightness', label: 'Brightness',  status: 'active',
+    { id: 'brightness', label: 'Brightness Pref', status: 'active',
       val: `${Math.round(sensorRaw.brightnessLevel)}` },
   ];
 

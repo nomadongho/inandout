@@ -3,9 +3,10 @@
  * Reads microphone (noise) and ambient light sensor.
  *
  * Each reader exposes:
- *  - start()    → request permission / set up hardware
- *  - stop()     → tear down hardware
- *  - status     → 'unsupported' | 'permission-required' | 'active' | 'error'
+ *  - start()                    → detect support; sets initial status without requesting permission
+ *  - requestPermissionAndStart()→ actually requests permission (must be called from a user gesture)
+ *  - stop()                     → tear down hardware
+ *  - status     → 'using-simulation' | 'permission-needed' | 'active' | 'denied' | 'unsupported'
  *  - value      → smoothed normalised reading (0–100)
  *  - rawValue   → latest hardware reading before normalisation
  *
@@ -21,22 +22,38 @@ import { clamp } from '../utils.js';
 const MIC_RING_SIZE = 8;
 
 export const micReader = {
-  status:   'unsupported', // 'unsupported' | 'permission-required' | 'active' | 'error'
-  value:    0,             // 0–100 smoothed noise level (ring-buffer average)
-  rawValue: 0,             // 0–255 instantaneous bin average (before normalisation)
+  status:   'using-simulation', // 'using-simulation' | 'permission-needed' | 'active' | 'denied' | 'unsupported'
+  value:    0,                  // 0–100 smoothed noise level (ring-buffer average)
+  rawValue: 0,                  // 0–255 instantaneous bin average (before normalisation)
   _stream:    null,
   _analyser:  null,
   _dataArray: null,
   _rafId:     null,
-  _ring:      [],          // circular buffer of recent raw readings
+  _ring:      [],               // circular buffer of recent raw readings
 
-  /** Request mic permission and start sampling. */
-  async start() {
+  /**
+   * Detect microphone support and set initial status.
+   * Does NOT request permission — call requestPermissionAndStart() from a user gesture.
+   */
+  start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Browser has no microphone API at all
+      this.status = 'unsupported';
+      return;
+    }
+    // API exists but we haven't asked yet — wait for the user to tap Enable Sensors
+    this.status = 'permission-needed';
+  },
+
+  /**
+   * Request microphone permission and begin sampling.
+   * MUST be called from a user gesture (e.g. button click) to work on mobile browsers.
+   */
+  async requestPermissionAndStart() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       this.status = 'unsupported';
       return;
     }
-    this.status = 'permission-required';
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       this._stream = stream;
@@ -53,12 +70,19 @@ export const micReader = {
       this.status     = 'active';
       this._poll();
     } catch (err) {
-      console.warn('[mic] Permission denied or error:', err);
-      this.status = 'error';
+      // NotAllowedError / PermissionDeniedError → user said no
+      // NotFoundError → no microphone hardware
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        console.warn('[mic] Permission denied:', err);
+        this.status = 'denied';
+      } else {
+        console.warn('[mic] Could not start microphone:', err);
+        this.status = 'using-simulation';
+      }
     }
   },
 
-  /** Stop the microphone stream. */
+  /** Stop the microphone stream and reset to simulation. */
   stop() {
     if (this._rafId) cancelAnimationFrame(this._rafId);
     if (this._stream) {
@@ -68,7 +92,7 @@ export const micReader = {
     this._analyser  = null;
     this._dataArray = null;
     this._ring      = [];
-    this.status     = 'unsupported';
+    this.status     = 'using-simulation';
     this.value      = 0;
     this.rawValue   = 0;
   },
@@ -104,16 +128,17 @@ export const micReader = {
 const LIGHT_SMOOTH = 0.15;
 
 export const lightReader = {
-  status:   'unsupported',
+  status:   'using-simulation', // 'using-simulation' | 'active' | 'unsupported'
   value:    50,   // 0–100 smoothed light level
   rawValue: 0,    // raw lux reading from the hardware sensor
   _sensor:  null,
 
-  /** Attempt to start AmbientLightSensor. */
+  /** Attempt to start AmbientLightSensor. Falls back to simulation if unavailable. */
   async start() {
     // AmbientLightSensor is a Generic Sensor API — check for it
     if (typeof AmbientLightSensor === 'undefined') {
-      this.status = 'unsupported';
+      // Not supported in this browser (Firefox, Safari, iOS) — use slider simulation
+      this.status = 'using-simulation';
       return;
     }
     try {
@@ -121,11 +146,10 @@ export const lightReader = {
       if (navigator.permissions) {
         const result = await navigator.permissions.query({ name: 'ambient-light-sensor' });
         if (result.state === 'denied') {
-          this.status = 'error';
+          this.status = 'using-simulation';
           return;
         }
       }
-      this.status = 'permission-required';
       // eslint-disable-next-line no-undef
       const sensor = new AmbientLightSensor({ frequency: 2 });
       sensor.addEventListener('reading', () => {
@@ -142,14 +166,16 @@ export const lightReader = {
       });
       sensor.addEventListener('error', (e) => {
         console.warn('[light] Sensor error:', e.error);
-        this.status = 'error';
+        // Sensor errored at runtime — fall back to simulation silently
+        this.status = 'using-simulation';
       });
       sensor.start();
       this._sensor = sensor;
       this.status  = 'active';
     } catch (err) {
       console.warn('[light] Could not start AmbientLightSensor:', err);
-      this.status = 'unsupported';
+      // Any error (SecurityError, NotAllowedError, etc.) — use slider
+      this.status = 'using-simulation';
     }
   },
 
@@ -158,6 +184,6 @@ export const lightReader = {
       try { this._sensor.stop(); } catch (_) {}
       this._sensor = null;
     }
-    this.status = 'unsupported';
+    this.status = 'using-simulation';
   },
 };

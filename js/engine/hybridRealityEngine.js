@@ -55,15 +55,18 @@ let _intervalId = null;
 
 /** Start all sensors then begin the tick loop. */
 async function start() {
-  // Attempt to start real sensors; they update usingSensor flags below
+  // Start light and battery immediately (no user gesture needed)
   await Promise.all([
-    startMic(),
     startLight(),
     startBattery(),
-    startMotion(),
   ]);
 
-  // Desktop fallback: keyboard tilt simulation
+  // Detect mic and motion support; set initial status without requesting permission.
+  // Actual permission is requested only when the user taps "Enable Sensors".
+  startMicDetect();
+  await startMotionDetect();
+
+  // Desktop / non-iOS fallback: start keyboard tilt simulation unless motion already active
   if (!usingSensor.motion) {
     keyboardTilt.start();
   }
@@ -71,6 +74,26 @@ async function start() {
   // Start the main engine tick
   if (_intervalId === null) {
     _intervalId = setInterval(_tick, 1000 / TICK_RATE_HZ);
+  }
+}
+
+/**
+ * Request microphone and motion permissions.
+ * MUST be called from a user gesture (button click) — never called automatically.
+ * Each permission is handled independently; one failure won't block the other.
+ */
+async function enableSensors() {
+  // Request microphone permission and start audio analysis
+  await micReader.requestPermissionAndStart();
+  usingSensor.noise = micReader.status === 'active';
+
+  // Request motion permission (iOS 13+ requires this from a user gesture)
+  await motionReader.requestPermissionAndStart();
+  usingSensor.motion = motionReader.status === 'active';
+
+  // If motion is now active, keyboard simulation is no longer needed
+  if (usingSensor.motion) {
+    keyboardTilt.stop();
   }
 }
 
@@ -111,8 +134,9 @@ function getSensorStatus() {
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 
-async function startMic() {
-  await micReader.start();
+/** Detect mic support and set initial status — no permission requested yet. */
+function startMicDetect() {
+  micReader.start();
   usingSensor.noise = micReader.status === 'active';
 }
 
@@ -126,7 +150,8 @@ async function startBattery() {
   usingSensor.battery = batteryReader.status === 'active';
 }
 
-async function startMotion() {
+/** Detect motion support and set initial status — on iOS does not request permission. */
+async function startMotionDetect() {
   await motionReader.start();
   usingSensor.motion = motionReader.status === 'active';
 }
@@ -183,6 +208,7 @@ function _getCurrentState() {
 const engine = {
   start,
   stop,
+  enableSensors,
   setFallback,
   getFallback,
   getSensorStatus,
