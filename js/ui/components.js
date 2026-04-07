@@ -107,14 +107,31 @@ export function buildLog(entries) {
 
 /**
  * Re-render the log entries inside an existing log panel.
+ * Accepts either plain strings (survive mode) or
+ * {msg, type, time} objects (explore mode).
  * @param {HTMLElement} logEl
- * @param {string[]} entries
+ * @param {Array<string|{msg:string,type:string,time:string}>} entries
  */
 export function renderLog(logEl, entries) {
   logEl.innerHTML = '';
-  entries.forEach(msg => {
+  entries.forEach(entry => {
     const p = document.createElement('p');
-    p.textContent = msg;
+    if (typeof entry === 'string') {
+      p.textContent = entry;
+    } else {
+      if (entry.time) {
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'log-time';
+        timeSpan.textContent = `[${entry.time}] `;
+        p.appendChild(timeSpan);
+      }
+      const msgSpan = document.createElement('span');
+      msgSpan.textContent = entry.msg;
+      p.appendChild(msgSpan);
+      if (entry.type && entry.type !== 'info') {
+        p.classList.add(`log-${entry.type}`);
+      }
+    }
     logEl.appendChild(p);
   });
 }

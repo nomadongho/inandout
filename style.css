@@ -550,3 +550,99 @@ html, body {
   .action-bar-survive { flex-wrap: nowrap; }
   .home-title { font-size: 4rem; }
 }
+
+/* ── EXPLORE MODE ADDITIONS ──────────────────────────────── */
+
+/* Danger bar */
+.explore-danger-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  transition: border-color 0.3s;
+}
+
+.explore-danger-bar.is-high {
+  border-color: var(--danger);
+  animation: danger-flash 0.8s ease-in-out infinite;
+}
+
+@keyframes danger-flash {
+  0%, 100% { border-color: var(--danger); }
+  50%       { border-color: rgba(255,68,68,0.25); }
+}
+
+.danger-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  min-width: 58px;
+}
+
+.danger-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.danger-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--danger);
+  transition: width 0.4s ease;
+}
+
+.danger-value {
+  font-size: 0.72rem;
+  color: var(--danger);
+  font-weight: 700;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* Event log entry types */
+.event-log .log-danger { color: var(--danger); }
+.event-log .log-bonus  { color: var(--accent); }
+.event-log .log-warn   { color: var(--warn); }
+
+.log-time {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin-right: 2px;
+}
+
+/* Run summary grid inside modal */
+.run-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+  text-align: left;
+}
+
+.summary-item {
+  background: var(--bg3);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.summary-label {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+
+.summary-value {
+  font-size: 0.92rem;
+  color: var(--accent2);
+  font-weight: 700;
+}
