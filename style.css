@@ -465,7 +465,7 @@ html, body {
 .hud-left  { display: flex; gap: 16px; }
 .hud-right { display: flex; gap: 16px; }
 
-/* ── RADAR ────────────────────────────────────────────────── */
+/* ── RADAR (legacy — kept for compatibility) ──────────────── */
 .radar, .explore-radar {
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -474,6 +474,75 @@ html, body {
   width: 180px !important;
   height: 180px !important;
   max-width: 100%;
+}
+
+/* ── GAME CANVAS ──────────────────────────────────────────── */
+.game-canvas, .explore-game-canvas {
+  display: block;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 300px !important;
+  height: 300px !important;
+  max-width: 100%;
+  background: #080810;
+}
+
+/* ── PLAYER STATE BADGE ───────────────────────────────────── */
+.player-state-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--text-dim);
+  color: var(--text-dim);
+  background: transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.player-state-badge.state-stealth {
+  color: var(--accent2);
+  border-color: var(--accent2);
+  background: rgba(0,207,255,0.12);
+  animation: stealth-pulse 1.2s ease-in-out infinite;
+}
+
+.player-state-badge.state-detected {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(255,68,68,0.12);
+  animation: danger-flash 0.5s ease-in-out infinite;
+}
+
+.player-state-badge.state-hidden {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(0,255,136,0.10);
+}
+
+.player-state-badge.state-caution {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: rgba(255,170,0,0.08);
+}
+
+@keyframes stealth-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* ── DETECTION FLASH on explore screen ───────────────────── */
+.screen-explore.detection-flash {
+  animation: screen-flash 0.4s ease-out;
+}
+
+@keyframes screen-flash {
+  0%   { box-shadow: inset 0 0 0 3px var(--danger); }
+  100% { box-shadow: none; }
 }
 
 /* ── ACTION BAR ───────────────────────────────────────────── */

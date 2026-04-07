@@ -36,15 +36,23 @@ export const derived = {
  * @type {ExploreRun}
  */
 export const exploreRun = {
-  active:    false,
-  paused:    false,
-  score:     0,
-  elapsed:   0,    // seconds
-  energy:    100,
-  danger:    0,    // 0–100 danger pressure meter
-  log:       [],   // {msg, type, time}[]
-  enemies:   [],   // simple enemy objects
-  summary:   null, // populated on endRun
+  active:         false,
+  paused:         false,
+  score:          0,
+  elapsed:        0,       // seconds
+  energy:         100,
+  danger:         0,       // 0–100 danger pressure meter
+  log:            [],      // {msg, type, time}[]
+  enemies:        [],      // enemy objects with detection radii
+  summary:        null,    // populated on endRun
+  // Real-time gameplay state
+  player:         { x: 50, y: 50 }, // grid position 0–100
+  escapePoint:    { x: 15, y: 15 }, // target to reach for win
+  escaped:        false,            // win condition reached
+  inStealthMode:  false,            // silence-based ghost mode
+  shadowCoverage: 0,                // 0–1: how deep in shadow the player is
+  isDetected:     false,            // true this tick if an enemy spotted player
+  stealthTimerSec: 0,               // seconds of consecutive silence
 };
 
 /**
@@ -67,15 +75,22 @@ export const ui = {
 
 /** Reset explore run to initial values. */
 export function resetExploreRun() {
-  exploreRun.active   = false;
-  exploreRun.paused   = false;
-  exploreRun.score    = 0;
-  exploreRun.elapsed  = 0;
-  exploreRun.energy   = 100;
-  exploreRun.danger   = 0;
-  exploreRun.log      = [];
-  exploreRun.enemies  = [];
-  exploreRun.summary  = null;
+  exploreRun.active         = false;
+  exploreRun.paused         = false;
+  exploreRun.score          = 0;
+  exploreRun.elapsed        = 0;
+  exploreRun.energy         = 100;
+  exploreRun.danger         = 0;
+  exploreRun.log            = [];
+  exploreRun.enemies        = [];
+  exploreRun.summary        = null;
+  exploreRun.player         = { x: 50, y: 50 };
+  exploreRun.escapePoint    = { x: 15, y: 15 };
+  exploreRun.escaped        = false;
+  exploreRun.inStealthMode  = false;
+  exploreRun.shadowCoverage = 0;
+  exploreRun.isDetected     = false;
+  exploreRun.stealthTimerSec = 0;
 }
 
 /** Reset survive state to fresh values (new game). */

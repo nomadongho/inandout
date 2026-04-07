@@ -179,75 +179,206 @@ export function buildSensorRow(id, label, status, valueStr) {
   return row;
 }
 
-// ── Mini radar canvas ─────────────────────────────────────────────────────────
+// ── Game canvas (replaces mini radar) ────────────────────────────────────────
 
 /**
- * Build a small canvas radar showing enemy positions.
+ * Build a full game canvas for Explore mode.
+ * Displays: shadow zones, escape beacon, enemy detection radii, player state.
+ *
  * @returns {{ canvas: HTMLCanvasElement, draw: Function }}
  */
-export function buildRadar() {
+export function buildGameCanvas() {
   const canvas = document.createElement('canvas');
-  canvas.className = 'radar';
-  canvas.width  = 200;
-  canvas.height = 200;
+  canvas.className = 'game-canvas';
+  canvas.width  = 300;
+  canvas.height = 300;
 
   /**
-   * Redraw the radar.
-   * @param {Array<{x:number,y:number}>} enemies  x,y in 0–100
-   * @param {number} threatLevel  0–100 (affects sweep colour)
+   * Redraw the game canvas.
+   * @param {{
+   *   player:         {x:number, y:number},
+   *   enemies:        Array<{x,y,detectionRadius,alerted}>,
+   *   escapePoint:    {x:number, y:number},
+   *   inStealthMode:  boolean,
+   *   isDetected:     boolean,
+   *   shadowCoverage: number,
+   *   noiseLevel:     number,
+   *   ambientLight:   number,
+   * }} state
    */
-  function draw(enemies, threatLevel) {
+  function draw(state) {
+    const {
+      player, enemies, escapePoint,
+      inStealthMode, isDetected, shadowCoverage, noiseLevel,
+    } = state;
+
     const ctx = canvas.getContext('2d');
     const W   = canvas.width;
     const H   = canvas.height;
-    const cx  = W / 2;
-    const cy  = H / 2;
 
-    ctx.clearRect(0, 0, W, H);
-
-    // Background
-    ctx.fillStyle = '#0a0a12';
+    // ── Background ──────────────────────────────────────────────────────────
+    ctx.fillStyle = '#080810';
     ctx.fillRect(0, 0, W, H);
 
-    // Grid circles
-    ctx.strokeStyle = '#1e3a1e';
-    ctx.lineWidth   = 1;
-    [0.3, 0.6, 0.9].forEach(r => {
+    // ── Shadow zones (corners darken when ambient light is low) ─────────────
+    if (shadowCoverage > 0.1) {
+      const corners = [
+        { x: 0, y: 0 }, { x: W, y: 0 }, { x: 0, y: H }, { x: W, y: H },
+      ];
+      corners.forEach(c => {
+        const grad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, W * 0.5);
+        grad.addColorStop(0, `rgba(0,0,0,${shadowCoverage * 0.75})`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      });
+
+      // Subtle blue-teal tint in shadows to indicate safe zones
+      ctx.fillStyle = `rgba(0,40,60,${shadowCoverage * 0.25})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // ── Grid ────────────────────────────────────────────────────────────────
+    ctx.strokeStyle = '#1a2a1a';
+    ctx.lineWidth   = 0.5;
+    for (let i = 0; i <= 10; i++) {
       ctx.beginPath();
-      ctx.arc(cx, cy, r * (W / 2), 0, Math.PI * 2);
+      ctx.moveTo(i * W / 10, 0); ctx.lineTo(i * W / 10, H);
       ctx.stroke();
-    });
-
-    // Cross hairs
-    ctx.beginPath();
-    ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
-    ctx.moveTo(0, cy); ctx.lineTo(W, cy);
-    ctx.strokeStyle = '#1e3a1e';
-    ctx.stroke();
-
-    // Threat ring
-    const alpha = threatLevel / 100 * 0.4;
-    ctx.beginPath();
-    ctx.arc(cx, cy, W / 2 - 2, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,50,50,${alpha})`;
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Enemies
-    enemies.forEach(e => {
-      const ex = (e.x / 100) * W;
-      const ey = (e.y / 100) * H;
       ctx.beginPath();
-      ctx.arc(ex, ey, 5, 0, Math.PI * 2);
-      ctx.fillStyle = '#ff4444';
-      ctx.fill();
-    });
+      ctx.moveTo(0, i * H / 10); ctx.lineTo(W, i * H / 10);
+      ctx.stroke();
+    }
 
-    // Player dot
+    // ── Escape beacon ────────────────────────────────────────────────────────
+    const ex     = (escapePoint.x / 100) * W;
+    const ey     = (escapePoint.y / 100) * H;
+    const pulse  = (Math.sin(Date.now() / 400) + 1) / 2; // 0–1 pulsing
+    const beaconR = 8 + pulse * 6;
+
+    // Glow
+    const beaconGlow = ctx.createRadialGradient(ex, ey, 0, ex, ey, beaconR * 2.5);
+    beaconGlow.addColorStop(0, `rgba(0,255,136,${0.3 + pulse * 0.2})`);
+    beaconGlow.addColorStop(1, 'rgba(0,255,136,0)');
+    ctx.fillStyle = beaconGlow;
     ctx.beginPath();
-    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.arc(ex, ey, beaconR * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core dot
+    ctx.beginPath();
+    ctx.arc(ex, ey, 5, 0, Math.PI * 2);
     ctx.fillStyle = '#00ff88';
     ctx.fill();
+
+    // Label
+    ctx.fillStyle   = '#00ff88';
+    ctx.font        = 'bold 9px monospace';
+    ctx.textAlign   = 'center';
+    ctx.fillText('EXIT', ex, ey - 12);
+
+    // ── Enemies: detection radius + body ────────────────────────────────────
+    enemies.forEach(e => {
+      const emx   = (e.x / 100) * W;
+      const emy   = (e.y / 100) * H;
+      const rPx   = (e.detectionRadius / 100) * W;
+
+      // Detection radius fill
+      const fillAlpha = e.alerted ? 0.12 : 0.06;
+      const fillColor = e.alerted ? `rgba(255,50,50,${fillAlpha})` : `rgba(255,120,0,${fillAlpha})`;
+      ctx.beginPath();
+      ctx.arc(emx, emy, rPx, 0, Math.PI * 2);
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+
+      // Detection radius ring
+      const ringAlpha = e.alerted ? (0.5 + pulse * 0.3) : 0.35;
+      ctx.beginPath();
+      ctx.arc(emx, emy, rPx, 0, Math.PI * 2);
+      ctx.strokeStyle = e.alerted
+        ? `rgba(255,50,50,${ringAlpha})`
+        : `rgba(255,120,0,${ringAlpha})`;
+      ctx.lineWidth = e.alerted ? 2 : 1;
+      ctx.stroke();
+
+      // Enemy body
+      ctx.beginPath();
+      ctx.arc(emx, emy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = e.alerted ? '#ff3333' : '#ff7700';
+      ctx.fill();
+
+      // Alert indicator
+      if (e.alerted) {
+        ctx.fillStyle   = '#ff3333';
+        ctx.font        = '10px monospace';
+        ctx.textAlign   = 'center';
+        ctx.fillText('!', emx, emy - 10);
+      }
+    });
+
+    // ── Noise pulse around player ─────────────────────────────────────────
+    if (noiseLevel > 25) {
+      const px      = (player.x / 100) * W;
+      const py      = (player.y / 100) * H;
+      const pulseR  = (noiseLevel / 100) * 45;
+      const alpha   = (noiseLevel - 25) / 75 * 0.4;
+      ctx.beginPath();
+      ctx.arc(px, py, pulseR, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,170,0,${alpha})`;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+
+    // ── Player ────────────────────────────────────────────────────────────
+    const px = (player.x / 100) * W;
+    const py = (player.y / 100) * H;
+
+    // Choose colour based on state
+    let pColor, pLabel;
+    if (inStealthMode) {
+      pColor = [0, 207, 255];   // cyan — ghost mode
+      pLabel = 'GHOST';
+    } else if (isDetected) {
+      pColor = [255, 68, 68];   // red — exposed
+      pLabel = 'EXPOSED';
+    } else if (shadowCoverage > 0.4) {
+      pColor = [0, 255, 136];   // green — hidden in shadow
+      pLabel = 'HIDDEN';
+    } else {
+      pColor = [255, 170, 0];   // orange — in the open
+      pLabel = 'CAUTION';
+    }
+    const [pr, pg, pb] = pColor;
+
+    // Glow
+    const pglow = ctx.createRadialGradient(px, py, 0, px, py, 18);
+    pglow.addColorStop(0, `rgba(${pr},${pg},${pb},0.35)`);
+    pglow.addColorStop(1, `rgba(${pr},${pg},${pb},0)`);
+    ctx.fillStyle = pglow;
+    ctx.beginPath();
+    ctx.arc(px, py, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${pr},${pg},${pb})`;
+    ctx.fill();
+
+    // State label
+    ctx.fillStyle = `rgb(${pr},${pg},${pb})`;
+    ctx.font      = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(pLabel, px, py - 12);
+
+    // ── Stealth mode shimmer ring ──────────────────────────────────────────
+    if (inStealthMode) {
+      ctx.beginPath();
+      ctx.arc(px, py, 14 + pulse * 6, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.4 + pulse * 0.2})`;
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
   }
 
   return { canvas, draw };

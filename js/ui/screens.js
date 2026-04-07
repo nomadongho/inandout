@@ -9,7 +9,7 @@
 
 import {
   buildMeter, updateMeter, buildButton, renderLog,
-  buildSensorRow, buildRadar, showModal,
+  buildSensorRow, buildGameCanvas, showModal,
 } from './components.js';
 import { sensorRaw, derived, exploreRun, survive, ui } from '../state.js';
 import engine from '../engine/hybridRealityEngine.js';
@@ -234,7 +234,8 @@ export function teardownSensorScreen() {
 
 // ── EXPLORE SCREEN ────────────────────────────────────────────────────────────
 
-let _radar = null;
+let _gameCanvas = null;
+let _canvasRafId = null;
 
 export function buildExploreScreen() {
   const app = document.getElementById('app');
@@ -258,7 +259,10 @@ export function buildExploreScreen() {
 
   const hudRight = document.createElement('div');
   hudRight.className = 'hud-right';
-  hudRight.innerHTML = `<div class="hud-stat" id="hud-energy">Energy: 100%</div>`;
+  hudRight.innerHTML = `
+    <div class="hud-stat" id="hud-energy">Energy: 100%</div>
+    <div class="player-state-badge" id="player-state-badge">READY</div>
+  `;
 
   hud.appendChild(hudLeft);
   hud.appendChild(hudRight);
@@ -294,9 +298,9 @@ export function buildExploreScreen() {
     meters.appendChild(m);
   });
 
-  // ── Radar ──────────────────────────────────────────────────────────────────
-  _radar = buildRadar();
-  _radar.canvas.classList.add('explore-radar');
+  // ── Game canvas ─────────────────────────────────────────────────────────────
+  _gameCanvas = buildGameCanvas();
+  _gameCanvas.canvas.classList.add('explore-game-canvas');
 
   // ── Event log ─────────────────────────────────────────────────────────────
   const logEl = document.createElement('div');
@@ -324,13 +328,41 @@ export function buildExploreScreen() {
   wrap.appendChild(hud);
   wrap.appendChild(dangerBar);
   wrap.appendChild(meters);
-  wrap.appendChild(_radar.canvas);
+  wrap.appendChild(_gameCanvas.canvas);
   wrap.appendChild(logEl);
   wrap.appendChild(bar);
   app.appendChild(wrap);
 
   // Start the run, hook update callback
   startRun(_onExploreUpdate);
+
+  // rAF loop for smooth canvas redraws (independent of game tick rate)
+  _canvasRafId = requestAnimationFrame(_canvasLoop);
+}
+
+/** rAF loop: redraws game canvas at display rate (~60 fps) for smooth visuals. */
+function _canvasLoop() {
+  if (_gameCanvas && exploreRun.active) {
+    _gameCanvas.draw({
+      player:         exploreRun.player,
+      enemies:        exploreRun.enemies,
+      escapePoint:    exploreRun.escapePoint,
+      inStealthMode:  exploreRun.inStealthMode,
+      isDetected:     exploreRun.isDetected,
+      shadowCoverage: exploreRun.shadowCoverage,
+      noiseLevel:     sensorRaw.noiseLevel,
+      ambientLight:   sensorRaw.ambientLight,
+    });
+  }
+  _canvasRafId = requestAnimationFrame(_canvasLoop);
+}
+
+export function teardownExploreScreen() {
+  if (_canvasRafId !== null) {
+    cancelAnimationFrame(_canvasRafId);
+    _canvasRafId = null;
+  }
+  _gameCanvas = null;
 }
 
 function _handlePauseResume() {
@@ -356,10 +388,33 @@ function _refreshExploreHUD() {
   const timerEl  = document.getElementById('hud-timer');
   const energyEl = document.getElementById('hud-energy');
   const logEl    = document.getElementById('explore-log');
+  const badgeEl  = document.getElementById('player-state-badge');
 
   if (scoreEl)  scoreEl.textContent  = `Score: ${Math.floor(exploreRun.score)}`;
   if (timerEl)  timerEl.textContent  = formatTime(exploreRun.elapsed);
   if (energyEl) energyEl.textContent = `Energy: ${Math.round(exploreRun.energy)}%`;
+
+  // Player state badge
+  if (badgeEl) {
+    let stateText, stateClass;
+    if (exploreRun.inStealthMode) {
+      stateText = '🫥 GHOST';        stateClass = 'state-stealth';
+    } else if (exploreRun.isDetected) {
+      stateText = '🚨 EXPOSED';      stateClass = 'state-detected';
+    } else if (exploreRun.shadowCoverage > 0.4) {
+      stateText = '🌑 HIDDEN';       stateClass = 'state-hidden';
+    } else {
+      stateText = '👁 CAUTION';      stateClass = 'state-caution';
+    }
+    badgeEl.textContent = stateText;
+    badgeEl.className   = `player-state-badge ${stateClass}`;
+  }
+
+  // Detection flash on the explore screen wrapper
+  const screenEl = document.querySelector('.screen-explore');
+  if (screenEl) {
+    screenEl.classList.toggle('detection-flash', exploreRun.isDetected);
+  }
 
   // Danger bar
   const dangerPct    = Math.round(exploreRun.danger);
@@ -377,9 +432,6 @@ function _refreshExploreHUD() {
     });
   }
 
-  // Radar
-  if (_radar) _radar.draw(exploreRun.enemies, derived.threatLevel);
-
   // Log
   if (logEl) renderLog(logEl, exploreRun.log);
 }
@@ -390,9 +442,15 @@ function _showRunSummary() {
   const time    = formatTime(s.elapsed ?? exploreRun.elapsed);
   const cause   = s.mainCause  || '—';
   const sensor  = s.topSensor  || '—';
+  const escaped = s.reason === 'escaped';
 
+  const title = escaped ? '🎉 Escaped!' : 'Run Complete';
   const body = `
     <div class="run-summary-grid">
+      <div class="summary-item">
+        <div class="summary-label">Result</div>
+        <div class="summary-value">${escaped ? '✅ ESCAPED' : s.reason === 'energy' ? '💀 Energy Out' : '🚪 Ended'}</div>
+      </div>
       <div class="summary-item">
         <div class="summary-label">Final Score</div>
         <div class="summary-value">${score}</div>
@@ -402,16 +460,12 @@ function _showRunSummary() {
         <div class="summary-value">${time}</div>
       </div>
       <div class="summary-item">
-        <div class="summary-label">Cause of Failure</div>
-        <div class="summary-value">${cause}</div>
-      </div>
-      <div class="summary-item">
-        <div class="summary-label">Top Sensor Influence</div>
-        <div class="summary-value">${sensor}</div>
+        <div class="summary-label">${escaped ? 'Top Sensor' : 'Cause of Failure'}</div>
+        <div class="summary-value">${escaped ? sensor : cause}</div>
       </div>
     </div>
   `;
-  showModal('Run Complete', body, 'Back to Home', () => navigate('home'));
+  showModal(title, body, 'Back to Home', () => navigate('home'));
 }
 
 // ── SURVIVE SCREEN ────────────────────────────────────────────────────────────
