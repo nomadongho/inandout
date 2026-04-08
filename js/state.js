@@ -68,6 +68,7 @@ export const survive = {
   log:           [],  // string[]
   bestDays:      0,   // highest day reached across all runs
   actionsToday:  0,   // actions taken this day (resets on Next Day)
+  lastAction:    null, // key of the most recent action this day (for repeat penalty)
 };
 
 /** Transient UI flags */

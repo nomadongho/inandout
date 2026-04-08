@@ -171,6 +171,13 @@ html, body {
   flex: 1;
 }
 .btn-action:hover { border-color: var(--accent2); color: var(--accent2); }
+.btn-action:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: var(--border);
+  color: var(--text-muted, #666);
+}
+.btn-action:disabled:hover { border-color: var(--border); color: var(--text-muted, #666); }
 
 .btn-large  { font-size: 1rem; min-height: 54px; width: 100%; }
 .btn-small  { min-height: 36px; font-size: 0.8rem; padding: 6px 14px; }
@@ -722,6 +729,46 @@ html, body {
   font-size: 0.76rem;
   color: var(--accent2);
   opacity: 0.85;
+}
+
+/* Action slot pips (●●○) displayed below the day counter */
+.action-pips {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.action-pip {
+  font-size: 0.8rem;
+  color: var(--border);
+  transition: color 0.15s;
+}
+
+.action-pip.action-pip-used {
+  color: var(--accent);
+}
+
+.action-slots-warn {
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.action-slots-full {
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.action-slots-info {
+  font-size: 0.70rem;
+  color: var(--text-muted, #888);
 }
 
 /* Environment condition labels */

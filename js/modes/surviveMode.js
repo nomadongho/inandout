@@ -34,8 +34,9 @@ export function loadSurvive() {
       typeof e === 'string' ? { msg: e, type: 'info', time: 'D0' } : e,
     );
   }
-  // actionsToday is transient — always reset to 0 on load (new session)
+  // actionsToday / lastAction are transient — always reset on load (new session)
   saved.actionsToday = 0;
+  saved.lastAction   = null;
   Object.assign(survive, saved);
 }
 
@@ -55,6 +56,8 @@ export function resetAndSave() {
   survive.shelterEnergy = 60;
   survive.log           = [];
   survive.bestDays      = best;
+  survive.actionsToday  = 0;
+  survive.lastAction    = null;
   saveSurvive();
 }
 
@@ -74,6 +77,31 @@ function _env() {
   };
 }
 
+// ── Action slots & repeat penalty ────────────────────────────────────────────
+
+/**
+ * Record that an action was taken.
+ * Call at the end of each successful action (before saveSurvive).
+ * @param {string} key  Short identifier matching the action, e.g. 'explore'.
+ */
+function _recordAction(key) {
+  survive.actionsToday += 1;
+  survive.lastAction    = key;
+}
+
+/**
+ * Apply a 30 % repeat penalty when the same action is used twice in a day.
+ * Logs a visible warning so the player knows why yield is reduced.
+ * @param {string} key        Action identifier.
+ * @param {string} label      Human-readable name shown in the log.
+ * @returns {number} multiplier — 0.7 if penalty applies, 1.0 otherwise.
+ */
+function _repeatMultiplier(key, label) {
+  if (survive.lastAction !== key) return 1.0;
+  _log(`⚠ FATIGUE: Using ${label} twice today — effectiveness −30%.`, 'warn');
+  return 0.7;
+}
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 /**
@@ -85,6 +113,7 @@ function _env() {
 export function actionExplore() {
   const env = _env();
   _log('— EXPLORE —', 'action');
+  const mult = _repeatMultiplier('explore', 'Explore');
 
   let found          = randInt(5, 15);
   let encounterChance = 0.18 + derived.exposure / 200 + derived.threatLevel / 200;
@@ -149,12 +178,13 @@ export function actionExplore() {
     ]), 'bonus');
   }
 
-  survive.resources     = clamp(survive.resources + found,       0, 100);
+  survive.resources     = clamp(survive.resources + Math.round(found * mult), 0, 100);
   survive.stress        = clamp(survive.stress    + stressHit,   0, 100);
   survive.health        = clamp(survive.health    - healthHit,   0, 100);
   survive.shelterEnergy = clamp(survive.shelterEnergy - 5,       0, 100);
 
-  _log(`+${found} resources. Stress +${stressHit}${healthHit ? `. Health −${healthHit}` : ''}.`, 'info');
+  _log(`+${Math.round(found * mult)} resources. Stress +${stressHit}${healthHit ? `. Health −${healthHit}` : ''}.`, 'info');
+  _recordAction('explore');
   saveSurvive();
 }
 
@@ -167,6 +197,7 @@ export function actionExplore() {
 export function actionRest() {
   const env = _env();
   _log('— REST —', 'action');
+  const mult = _repeatMultiplier('rest', 'Rest');
 
   let stressRecovery = randInt(10, 20);
   let healthGain     = randInt(2, 5);
@@ -218,13 +249,14 @@ export function actionRest() {
     stressRecovery = Math.max(1, Math.floor(stressRecovery * 0.50));
   }
 
-  survive.stress        = clamp(survive.stress    - stressRecovery,  0, 100);
+  survive.stress        = clamp(survive.stress    - Math.round(stressRecovery * mult), 0, 100);
   survive.health        = clamp(survive.health    + healthGain,      0, 100);
   survive.resources     = clamp(survive.resources - resourceCost,    0, 100);
   survive.shelterEnergy = clamp(survive.shelterEnergy - 3,           0, 100);
 
   const hSign = healthGain >= 0 ? `+${healthGain}` : `${healthGain}`;
-  _log(`Stress −${stressRecovery}. Health ${hSign}. Resources −${resourceCost}.`, 'info');
+  _log(`Stress −${Math.round(stressRecovery * mult)}. Health ${hSign}. Resources −${resourceCost}.`, 'info');
+  _recordAction('rest');
   saveSurvive();
 }
 
@@ -236,6 +268,7 @@ export function actionRest() {
 export function actionHide() {
   const env = _env();
   _log('— HIDE —', 'action');
+  const mult = _repeatMultiplier('hide', 'Hide');
 
   let stressChange = 0;
   const resourceCost = 3;
@@ -282,13 +315,18 @@ export function actionHide() {
     _log('Paranoia undermines the hiding spot.', 'warn');
   }
 
-  survive.stress        = clamp(survive.stress    + Math.round(stressChange), 0, 100);
-  survive.resources     = clamp(survive.resources - resourceCost,             0, 100);
-  survive.shelterEnergy = clamp(survive.shelterEnergy - 2,                    0, 100);
+  // Apply repeat-use fatigue: stress relief is reduced, stress costs stay unchanged
+  const effectiveChange = stressChange < 0
+    ? Math.round(stressChange * mult)
+    : stressChange;
+  survive.stress        = clamp(survive.stress    + effectiveChange, 0, 100);
+  survive.resources     = clamp(survive.resources - resourceCost,    0, 100);
+  survive.shelterEnergy = clamp(survive.shelterEnergy - 2,           0, 100);
 
-  const sc = Math.round(stressChange);
+  const sc = effectiveChange;
   const stressLabel = sc <= 0 ? `Stress −${Math.abs(sc)}` : `Stress +${sc}`;
   _log(`${stressLabel}. Resources −${resourceCost}.`, 'info');
+  _recordAction('hide');
   saveSurvive();
 }
 
@@ -309,6 +347,7 @@ export function actionRecharge() {
     return;
   }
 
+  const mult = _repeatMultiplier('recharge', 'Recharge');
   let amount = randInt(15, 30);
 
   // Battery efficiency multiplier
@@ -327,10 +366,11 @@ export function actionRecharge() {
     _log(`Ambient light provides a small extra boost. +${lightBonus}.`, 'bonus');
   }
 
-  survive.shelterEnergy = clamp(survive.shelterEnergy + amount, 0, 100);
+  survive.shelterEnergy = clamp(survive.shelterEnergy + Math.round(amount * mult), 0, 100);
   survive.resources     = clamp(survive.resources     - cost,   0, 100);
 
-  _log(`Shelter energy +${amount}. Resources −${cost}.`, 'info');
+  _log(`Shelter energy +${Math.round(amount * mult)}. Resources −${cost}.`, 'info');
+  _recordAction('recharge');
   saveSurvive();
 }
 
@@ -340,9 +380,20 @@ export function actionRecharge() {
  * Daily resource cost scales up every 10 days to increase challenge.
  */
 export function actionNextDay() {
+  // Require at least one action before the day can end
+  if (survive.actionsToday === 0) {
+    _log('⛔ You haven\'t done anything today — take at least one action first.', 'warn');
+    saveSurvive();
+    return;
+  }
+
   _log(`══ END OF DAY ${survive.day} ══`, 'action');
 
   survive.day += 1;
+
+  // Reset daily action tracking
+  survive.actionsToday = 0;
+  survive.lastAction   = null;
 
   // Difficulty scaling: +1 resource consumed per 10 days survived (kicks in from day 11)
   const scaling      = Math.floor((survive.day - 1) / 10);
@@ -661,8 +712,9 @@ export function actionTreat() {
     return;
   }
 
-  const stressReduce = randInt(18, 28);
-  const healthGain   = randInt(5, 10);
+  const mult = _repeatMultiplier('treat', 'Treat');
+  const stressReduce = Math.round(randInt(18, 28) * mult);
+  const healthGain   = Math.round(randInt(5, 10)  * mult);
 
   survive.resources = clamp(survive.resources - cost,          0, 100);
   survive.stress    = clamp(survive.stress    - stressReduce,  0, 100);
@@ -675,6 +727,7 @@ export function actionTreat() {
     'You patch up every scrape and force yourself to breathe.',
   ]), 'bonus');
   _log(`Stress −${stressReduce}. Health +${healthGain}. Resources −${cost}.`, 'info');
+  _recordAction('treat');
   saveSurvive();
 }
 
