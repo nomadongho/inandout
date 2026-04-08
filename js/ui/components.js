@@ -248,26 +248,33 @@ export function buildGameCanvas() {
 
     const pulse = (Math.sin(timestamp * 2 * Math.PI / PULSE_PERIOD_MS) + 1) / 2;
 
-    // Resize canvas to the stage's resolution (no stretching)
-    const desiredSize = (stage && stage.mapSize) ? stage.mapSize : 1024;
-    if (canvas.width !== desiredSize || canvas.height !== desiredSize) {
-      canvas.width  = desiredSize;
-      canvas.height = desiredSize;
+    // Canvas is fixed at base resolution — only viewport area changes per stage.
+    const BASE_SIZE = 1024;
+    if (canvas.width !== BASE_SIZE || canvas.height !== BASE_SIZE) {
+      canvas.width  = BASE_SIZE;
+      canvas.height = BASE_SIZE;
     }
 
     const ctx = canvas.getContext('2d');
-    const W   = canvas.width;
-    const H   = canvas.height;
+    const W   = BASE_SIZE;
+    const H   = BASE_SIZE;
 
-    // Scale factor relative to base resolution 600px — keeps UI elements
-    // (fonts, line widths, dot radii) proportionally sized at all resolutions.
-    const sc = W / 600;
+    // Scale factor is fixed to the base resolution so sprites/UI elements stay
+    // the same visual size regardless of which stage (map size) is active.
+    const sc = BASE_SIZE / 600;
 
-    // helper: convert 0–100 grid → canvas px
-    const gx = v => (v / 100) * W;
-    const gy = v => (v / 100) * H;
-    const gw = v => (v / 100) * W;
-    const gh = v => (v / 100) * H;
+    // Viewport: how many world units [0–100] fit across the canvas.
+    // Larger mapSize → smaller viewport → world appears bigger, sprites stay same size.
+    const viewportUnits = (stage && stage.mapSize) ? (100 * BASE_SIZE / stage.mapSize) : 100;
+    const viewHalf      = viewportUnits / 2;
+    const camX = Math.max(viewHalf, Math.min(100 - viewHalf, player ? player.x : 50));
+    const camY = Math.max(viewHalf, Math.min(100 - viewHalf, player ? player.y : 50));
+
+    // helper: convert 0–100 grid → canvas px (camera-relative)
+    const gx = v => ((v - camX) / viewportUnits + 0.5) * W;
+    const gy = v => ((v - camY) / viewportUnits + 0.5) * H;
+    const gw = v => (v / viewportUnits) * W;
+    const gh = v => (v / viewportUnits) * H;
 
     // ── Background / floor ─────────────────────────────────────────────────
     const floorColor = stage ? stage.floorColor : '#080810';
