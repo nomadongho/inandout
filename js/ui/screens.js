@@ -501,6 +501,7 @@ function _toggleDebugPanel(panelId) {
   el.classList.toggle('debug-hidden');
   if (!el.classList.contains('debug-hidden')) {
     _updateDebugPanel(panelId, panelId.includes('explore') ? 'explore' : 'survive');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 
