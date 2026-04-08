@@ -212,8 +212,8 @@ export function buildGameCanvas() {
 
   const canvas = document.createElement('canvas');
   canvas.className = 'game-canvas';
-  canvas.width  = 420;
-  canvas.height = 420;
+  canvas.width  = 600;
+  canvas.height = 600;
 
   /**
    * Redraw the game canvas.
