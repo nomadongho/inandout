@@ -414,6 +414,8 @@ function _canvasLoop(timestamp) {
       playerDetectionRadius: exploreRun.playerDetectionRadius,
       stage:                 exploreRun.stage,
       soundEvents:           exploreRun.soundEvents,
+      objectives:            exploreRun.objectives,
+      stealthTimerSec:       exploreRun.stealthTimerSec,
       timestamp,
     });
   }

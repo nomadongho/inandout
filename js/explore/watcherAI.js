@@ -12,7 +12,7 @@
  *  RETURNING     Lost target — heading back to patrol point
  */
 
-import { hasLineOfSight } from './geometry.js';
+import { hasLineOfSight, wallsOnSegment } from './geometry.js';
 import { soundIntensityAt } from './soundSystem.js';
 
 // ── Exported state constants ──────────────────────────────────────────────────
@@ -27,8 +27,8 @@ export const WS = {
 };
 
 // ── Timing (game ticks ≈ 100 ms each) ────────────────────────────────────────
-const SUSPICIOUS_MAX_TICKS   = 14;
-const LISTENING_MAX_TICKS    = 22;
+const SUSPICIOUS_MAX_TICKS    = 14;
+const LISTENING_MAX_TICKS     = 22;
 const INVESTIGATING_MAX_TICKS = 65;
 const ALERTED_MAX_TICKS       = 45;
 const CHASE_LOSE_TICKS        = 35;
@@ -42,11 +42,19 @@ const TH_CHASE        = 84;  // escalate to CHASING
 // ── Suspicion gain / decay per tick ──────────────────────────────────────────
 const GAIN_SOUND_WEAK      = 10;
 const GAIN_SOUND_STRONG    = 24;
-const GAIN_VISION          = 20;
-const GAIN_VISION_SUSTAINED = 30;  // after VISION_CONFIRM_TICKS consecutive ticks
-const VISION_CONFIRM_TICKS  = 4;
-const DECAY_IDLE            = 1.2;
-const DECAY_SUSPICIOUS      = 0.7;
+const DECAY_IDLE           = 1.2;
+const DECAY_SUSPICIOUS     = 0.7;
+
+// ── Visual awareness (0–100) — gradual build in LOS, slow decay outside ───────
+const VISUAL_AWARENESS_GAIN_MAX  = 16;   // max per tick at perfect close exposure
+const VISUAL_AWARENESS_DECAY     = 2.0;  // per tick when LOS is broken
+const VISUAL_AWARENESS_THRESHOLD = 20;   // min awareness before suspicion rises from vision
+const GAIN_VISION_SUSTAINED      = 26;   // max suspicion gain/tick when awareness is full
+
+// ── Sound memory — repeated sounds from same area accumulate confidence ────────
+const SOUND_MEMORY_DECAY     = 1.2;  // confidence lost per tick when quiet
+const SOUND_MEMORY_NEAR_DIST = 14;   // radius (grid units) to consider "same area"
+const SOUND_MEMORY_GAIN_BASE = 22;   // base confidence gain per sound heard
 
 // ── Hearing thresholds per group ─────────────────────────────────────────────
 // Group 0 = standard, 1 = scout (sensitive), 2 = guardian (poor hearing)
@@ -97,13 +105,19 @@ export function createWatcher(spawn, group) {
     suspicion:    0,        // 0–100
 
     // ── Memory ────────────────────────────────────────────────────────────
-    lastKnownPos:      null,   // last seen player {x,y}
-    lastHeardPos:      null,   // last heard sound source {x,y}
+    lastKnownPos:      null,   // last seen player {x,y} (exact)
+    lastHeardPos:      null,   // last heard estimated sound position {x,y}
     investigateTarget: null,   // current move target during INVESTIGATING
     returnTarget:      null,   // patrol point to return to
 
-    // ── Vision tracking ───────────────────────────────────────────────────
-    visionTicks:   0,          // consecutive ticks with direct LOS
+    // ── Estimated sound source (the noisy position the watcher investigates)
+    estimatedSoundPos: null,
+
+    // ── Sound memory: tracks repeated sounds from same area ───────────────
+    soundMemory: { confidence: 0, centerX: null, centerY: null },
+
+    // ── Visual awareness: gradual build while in LOS, slow decay outside ──
+    visualAwareness: 0,   // 0–100
 
     // ── Legacy / renderer-compatibility fields ────────────────────────────
     alerted:        false,
@@ -120,38 +134,55 @@ export function createWatcher(spawn, group) {
 /**
  * Update a single watcher for one tick.
  *
- * @param {object}   w            Watcher (mutated in place)
+ * @param {object}   w              Watcher (mutated in place)
  * @param {{x,y}}    player
- * @param {number}   playerR      Player detection radius
- * @param {Array}    soundEvents  Active sound events
- * @param {Array}    walls        Stage walls
+ * @param {number}   playerR        Player detection radius
+ * @param {Array}    soundEvents    Active sound events
+ * @param {Array}    walls          Stage walls + vision-blocking props (combined)
  * @param {boolean}  indoor
  * @param {boolean}  isNight
+ * @param {number}   [shadowCoverage] Player shadow coverage 0–1 (reduces visual gain)
  * @returns {{ heard:boolean, saw:boolean, stateChanged:string|null }}
  */
-export function updateWatcher(w, player, playerR, soundEvents, walls, indoor, isNight) {
+export function updateWatcher(w, player, playerR, soundEvents, walls, indoor, isNight, shadowCoverage = 0) {
   const result = { heard: false, saw: false, stateChanged: null };
   w.stateTimer++;
 
   // ── 1. Sound check ────────────────────────────────────────────────────────
   let bestIntensity  = 0;
-  let bestSoundPos   = null;
+  let bestTruePos    = null;
+  let bestWallCount  = 0;
+  let bestSoundType  = 'footstep';
 
   for (const ev of soundEvents) {
     const intensity = soundIntensityAt(ev, w.x, w.y, walls, indoor);
     const threshold  = HEARING_THRESHOLD[Math.min(w.groupId, 2)];
     if (intensity > threshold && intensity > bestIntensity) {
       bestIntensity = intensity;
-      bestSoundPos  = { x: ev.x, y: ev.y };
+      bestTruePos   = { x: ev.x, y: ev.y };
+      bestWallCount = wallsOnSegment(ev.x, ev.y, w.x, w.y, walls);
+      bestSoundType = ev.type || 'footstep';
     }
   }
 
-  if (bestSoundPos) {
-    result.heard      = true;
-    w.lastHeardPos    = { ...bestSoundPos };
-    w.soundSourceX    = bestSoundPos.x;
-    w.soundSourceY    = bestSoundPos.y;
-    w.soundReactTicks = 8;
+  if (bestTruePos) {
+    result.heard = true;
+    // Estimate the sound's origin — watchers don't know exact positions
+    const estimated       = _estimateSoundPos(bestTruePos.x, bestTruePos.y, bestIntensity, bestWallCount, indoor);
+    w.estimatedSoundPos   = estimated;
+    w.lastHeardPos        = { ...estimated };  // investigate the estimated location, not the real one
+    w.soundSourceX        = estimated.x;
+    w.soundSourceY        = estimated.y;
+    w.soundReactTicks     = 8;
+    // Update repeated-sound confidence memory
+    _updateSoundMemory(w, bestTruePos, bestIntensity, bestSoundType);
+  } else {
+    // Decay sound memory confidence when quiet
+    w.soundMemory.confidence = Math.max(0, w.soundMemory.confidence - SOUND_MEMORY_DECAY);
+    if (w.soundMemory.confidence === 0) {
+      w.soundMemory.centerX = null;
+      w.soundMemory.centerY = null;
+    }
   }
 
   // ── 2. Vision / LOS check ────────────────────────────────────────────────
@@ -168,11 +199,14 @@ export function updateWatcher(w, player, playerR, soundEvents, walls, indoor, is
   const hasLOS = inCone && hasLineOfSight(w.x, w.y, player.x, player.y, walls);
 
   if (hasLOS) {
-    w.visionTicks++;
+    // Visual awareness builds gradually — distance, cone angle, player radius, shadow all matter
+    const gain = _computeVisualGain(dist, angleDelta, w.fovRange, w.fovHalfAngle, playerR, shadowCoverage);
+    w.visualAwareness = Math.min(100, w.visualAwareness + gain);
     w.lastKnownPos = { x: player.x, y: player.y };
     result.saw     = true;
   } else {
-    w.visionTicks = Math.max(0, w.visionTicks - 1);
+    // Gradual decay — breaking LOS doesn't instantly reset awareness
+    w.visualAwareness = Math.max(0, w.visualAwareness - VISUAL_AWARENESS_DECAY);
   }
 
   // ── 3. Suspicion update ───────────────────────────────────────────────────
@@ -199,11 +233,20 @@ export function updateWatcher(w, player, playerR, soundEvents, walls, indoor, is
 
 function _updateSuspicion(w, soundIntensity, sawPlayer) {
   if (sawPlayer) {
-    const gain = w.visionTicks >= VISION_CONFIRM_TICKS
-      ? GAIN_VISION_SUSTAINED : GAIN_VISION;
-    w.suspicion = Math.min(100, w.suspicion + gain);
+    // Visual awareness drives suspicion — brief exposure = small gain; sustained = strong gain
+    const awareness = w.visualAwareness;
+    const aFrac     = Math.max(0, (awareness - VISUAL_AWARENESS_THRESHOLD) /
+                                   (100 - VISUAL_AWARENESS_THRESHOLD));
+    const gain      = 4 + aFrac * GAIN_VISION_SUSTAINED;
+    w.suspicion     = Math.min(100, w.suspicion + gain);
+  } else if (w.soundMemory && w.soundMemory.confidence > 15) {
+    // Repeated / sustained sounds from same area → escalating confidence
+    const confFrac = w.soundMemory.confidence / 100;
+    const gain     = GAIN_SOUND_WEAK + confFrac * (GAIN_SOUND_STRONG - GAIN_SOUND_WEAK);
+    w.suspicion    = Math.min(100, w.suspicion + gain);
   } else if (soundIntensity > 0) {
-    const gain = soundIntensity > 30 ? GAIN_SOUND_STRONG : GAIN_SOUND_WEAK;
+    // Single isolated sound → mild suspicion only (not full gain)
+    const gain  = soundIntensity > 30 ? GAIN_SOUND_STRONG * 0.45 : GAIN_SOUND_WEAK * 0.45;
     w.suspicion = Math.min(100, w.suspicion + gain);
   } else {
     const decay = w.state === WS.IDLE ? DECAY_IDLE : DECAY_SUSPICIOUS;
@@ -302,11 +345,11 @@ function _setState(w, newState) {
 }
 
 function _pickInvestigateTarget(w) {
-  return w.lastKnownPos
-    ? { ...w.lastKnownPos }
-    : w.lastHeardPos
-      ? { ...w.lastHeardPos }
-      : null;
+  // Prefer last confirmed sighting (exact); fall back to estimated sound position
+  if (w.lastKnownPos)      return { ...w.lastKnownPos };
+  if (w.estimatedSoundPos) return { ...w.estimatedSoundPos };
+  if (w.lastHeardPos)      return { ...w.lastHeardPos };
+  return null;
 }
 
 function _getPatrolPoint(w) {
@@ -335,13 +378,18 @@ function _executeState(w, player, isNight) {
       break;
 
     case WS.SUSPICIOUS:
-      // Turn toward the sound/sighting source; don't move
-      _turnToward(w, w.lastHeardPos || w.lastKnownPos);
+      // Turn toward the estimated sound source; don't move
+      _turnToward(w, w.estimatedSoundPos || w.lastHeardPos || w.lastKnownPos);
       break;
 
     case WS.LISTENING:
-      // Slow oscillating scan to convey "thinking"
-      w.facingAngle += 0.035 * Math.sin(w.stateTimer * 0.28);
+      // Phase 1 (first ~10 ticks): rotate to face estimated sound direction and pause
+      if (w.stateTimer <= 10 && (w.estimatedSoundPos || w.lastHeardPos)) {
+        _turnToward(w, w.estimatedSoundPos || w.lastHeardPos);
+      } else {
+        // Phase 2: slow oscillating scan to convey "deciding whether to act"
+        w.facingAngle += 0.035 * Math.sin(w.stateTimer * 0.28);
+      }
       break;
 
     case WS.INVESTIGATING:
@@ -409,6 +457,80 @@ function _turnToward(w, target) {
   const dy = target.y - w.y;
   const targetAngle = Math.atan2(dy, dx);
   w.facingAngle    += _angleDiff(targetAngle, w.facingAngle) * TURN_SPEED;
+}
+
+// ── Sound source estimation ───────────────────────────────────────────────────
+
+/**
+ * Convert a true sound position to an estimated one as perceived by the watcher.
+ * Stronger received intensity = smaller error. More walls = larger error.
+ */
+function _estimateSoundPos(trueX, trueY, intensity, wallCount, indoor) {
+  const baseError  = Math.max(1.0, 11.0 - intensity * 0.09);
+  const wallError  = wallCount * (indoor ? 1.8 : 2.8);
+  const totalError = Math.min(16, baseError + wallError);
+  if (totalError < 0.5) return { x: trueX, y: trueY };
+  const angle = Math.random() * Math.PI * 2;
+  const dist  = Math.random() * totalError;
+  return {
+    x: Math.max(2, Math.min(98, trueX + Math.cos(angle) * dist)),
+    y: Math.max(2, Math.min(98, trueY + Math.sin(angle) * dist)),
+  };
+}
+
+// ── Sound memory ──────────────────────────────────────────────────────────────
+
+/**
+ * Update the watcher's sound memory.
+ * Repeated sounds from the same area accumulate confidence.
+ * Sudden / burst sounds escalate confidence faster.
+ */
+function _updateSoundMemory(w, truePos, intensity, soundType) {
+  const mem      = w.soundMemory;
+  const typeMult = (soundType === 'stumble' || soundType === 'burst') ? 1.8 : 1.0;
+
+  if (mem.centerX !== null) {
+    const dx   = truePos.x - mem.centerX;
+    const dy   = truePos.y - mem.centerY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= SOUND_MEMORY_NEAR_DIST) {
+      // Same area — accumulate confidence; burst/stumble escalate faster
+      const gain = (intensity / 100) * SOUND_MEMORY_GAIN_BASE * typeMult;
+      mem.confidence = Math.min(100, mem.confidence + gain);
+      // Drift the remembered area centroid toward the new sound
+      mem.centerX = (mem.centerX * 2 + truePos.x) / 3;
+      mem.centerY = (mem.centerY * 2 + truePos.y) / 3;
+    } else {
+      // Different area — partial reset and shift toward new source
+      mem.confidence = Math.max(0, mem.confidence - 25);
+      if (mem.confidence < 10) {
+        mem.centerX = truePos.x;
+        mem.centerY = truePos.y;
+      }
+    }
+  } else {
+    // First sound heard — initialize memory with a cautious confidence
+    const gain = (intensity / 100) * SOUND_MEMORY_GAIN_BASE * 0.5 * typeMult;
+    mem.confidence = Math.min(30, gain);
+    mem.centerX    = truePos.x;
+    mem.centerY    = truePos.y;
+  }
+}
+
+// ── Visual awareness gain ─────────────────────────────────────────────────────
+
+/**
+ * Compute per-tick visual awareness gain while the player is in LOS.
+ * Close, centre-of-cone exposure with large detection radius gains the fastest.
+ * Shadow coverage reduces the gain significantly.
+ */
+function _computeVisualGain(dist, angleDelta, fovRange, fovHalfAngle, playerR, shadowCoverage) {
+  const distFactor   = Math.max(0.15, 1.0 - (dist / fovRange) * 0.7);
+  const angleFactor  = Math.max(0.25, 1.0 - (angleDelta / fovHalfAngle) * 0.75);
+  const radiusFactor = Math.min(1.8, 0.5 + playerR / 7);
+  const shadowFactor = Math.max(0.1, 1.0 - shadowCoverage * 0.65);
+  return VISUAL_AWARENESS_GAIN_MAX * distFactor * angleFactor * radiusFactor * shadowFactor;
 }
 
 // ── Angle helper ──────────────────────────────────────────────────────────────

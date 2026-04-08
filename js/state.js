@@ -58,6 +58,8 @@ export const exploreRun = {
   stage:        null,      // loaded stage definition object
   stageId:      'corridor', // id of the current stage
   soundEvents:  [],        // active SoundEvent[] from soundSystem.js
+  objectives:   [],        // active stage objectives [{id, type, pos, label, radius, collected}]
+  _objectiveHintSent: false,
 };
 
 /**
@@ -103,6 +105,8 @@ export function resetExploreRun() {
   exploreRun.stage              = null;
   exploreRun.stageId            = 'corridor';
   exploreRun.soundEvents        = [];
+  exploreRun.objectives         = [];
+  exploreRun._objectiveHintSent = false;
 }
 
 /** Reset survive state to fresh values (new game). */

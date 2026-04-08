@@ -255,6 +255,12 @@ export function startRun(onUpdate, stageId = 'corridor') {
   // Escape point (first defined escape point in the stage)
   exploreRun.escapePoint = { ...stage.escapePoints[0] };
 
+  // Objectives (copy with collected:false)
+  exploreRun.objectives = stage.objectives
+    ? stage.objectives.map(o => ({ ...o, collected: false }))
+    : [];
+  exploreRun._objectiveHintSent = false;
+
   // Spawn watchers from stage definition
   exploreRun.enemies = stage.watcherSpawns.map(spawn => {
     const group = ENEMY_GROUPS[Math.min(spawn.groupId ?? 0, ENEMY_GROUPS.length - 1)];
@@ -280,7 +286,11 @@ export function startRun(onUpdate, stageId = 'corridor') {
   _tickIntervalId = setInterval(_gameTick, TICK_MS);
 
   _pushLog(`🗺️ Stage: ${stage.name}`, 'info');
-  _pushLog('🏃 Run started — reach the EXIT to escape!', 'info');
+  if (exploreRun.objectives && exploreRun.objectives.length > 0) {
+    _pushLog(`🎯 Collect ${exploreRun.objectives.map(o => o.label).join(', ')}, then reach EXIT.`, 'info');
+  } else {
+    _pushLog('🏃 Run started — reach the EXIT to escape!', 'info');
+  }
   _pushLog('⬆ Tilt your device (or use arrow keys) to move.', 'info');
   _onUpdate && _onUpdate('start');
 }
@@ -407,11 +417,22 @@ function _gameTick() {
   // ── 14. Occasional random events ─────────────────────────────────────
   _fireEventMaybe();
 
-  // ── 15. Check escape (win condition) ─────────────────────────────────
+  // ── 15. Objective collection check ───────────────────────────────────
+  _checkObjectives();
+
+  // ── 16. Check escape (win condition) ─────────────────────────────────
   if (_distToEscape() < ESCAPE_RADIUS) {
-    exploreRun.escaped = true;
-    endRun('escaped');
-    return;
+    const objectivesDone = !exploreRun.objectives || exploreRun.objectives.length === 0 ||
+                           exploreRun.objectives.every(o => o.collected);
+    if (objectivesDone) {
+      exploreRun.escaped = true;
+      endRun('escaped');
+      return;
+    } else if (!exploreRun._objectiveHintSent) {
+      exploreRun._objectiveHintSent = true;
+      const remaining = exploreRun.objectives.filter(o => !o.collected);
+      _pushLog(`🚫 Need: ${remaining.map(o => o.label).join(', ')} before escaping!`, 'warn');
+    }
   }
 
   // ── 16. Check energy-depleted lose condition ──────────────────────────
@@ -449,9 +470,11 @@ function _movePlayer(tickSec) {
 
   const speedMult = derived.energyModifier < LOW_BATTERY_THRESHOLD ? 0.6 : 1.0;
   const walls     = exploreRun.stage ? exploreRun.stage.walls : [];
+  const props     = exploreRun.stage ? (exploreRun.stage.props || []) : [];
+  const allBlockers = [...walls, ...props];
   const dx        = tx * PLAYER_SPEED * speedMult;
   const dy        = ty * PLAYER_SPEED * speedMult;
-  const newPos    = moveWithCollision(exploreRun.player.x, exploreRun.player.y, dx, dy, walls);
+  const newPos    = moveWithCollision(exploreRun.player.x, exploreRun.player.y, dx, dy, allBlockers);
   exploreRun.player.x = clamp(newPos.x, 1, 99);
   exploreRun.player.y = clamp(newPos.y, 1, 99);
 }
@@ -605,10 +628,13 @@ function _updateWatchers() {
   const playerR     = _computePlayerDetectionRadius();
   exploreRun.playerDetectionRadius = playerR;
 
-  const soundEvents = exploreRun.soundEvents;
-  const walls       = exploreRun.stage.walls;
-  const indoor      = exploreRun.stage.indoor;
-  const isNight     = _isNightTime();
+  const soundEvents  = exploreRun.soundEvents;
+  const walls        = exploreRun.stage.walls;
+  const props        = exploreRun.stage.props || [];
+  const allBlockers  = [...walls, ...props];
+  const indoor       = exploreRun.stage.indoor;
+  const isNight      = _isNightTime();
+  const shadowCov    = exploreRun.shadowCoverage;
 
   let anyChasing    = false;
   let anyDetected   = false;
@@ -616,7 +642,7 @@ function _updateWatchers() {
   // Keep watchers that haven't permanently lost the player (they're never removed
   // except when they catch the player)
   exploreRun.enemies = exploreRun.enemies.filter(w => {
-    const res = updateWatcher(w, player, playerR, soundEvents, walls, indoor, isNight);
+    const res = updateWatcher(w, player, playerR, soundEvents, allBlockers, indoor, isNight, shadowCov);
 
     // Log on significant state transitions
     if (res.stateChanged) {
@@ -693,6 +719,25 @@ function _computePlayerDetectionRadius() {
   if (exploreRun.inStealthMode) r *= 0.2;
 
   return clamp(r, 1, 30);
+}
+
+// ── Objectives ────────────────────────────────────────────────────────────────
+
+function _checkObjectives() {
+  if (!exploreRun.objectives || exploreRun.objectives.length === 0) return;
+  const px = exploreRun.player.x;
+  const py = exploreRun.player.y;
+  for (const obj of exploreRun.objectives) {
+    if (obj.collected) continue;
+    const dx = px - obj.pos.x;
+    const dy = py - obj.pos.y;
+    if (Math.sqrt(dx * dx + dy * dy) <= (obj.radius || 6)) {
+      obj.collected = true;
+      const icon = obj.type === 'key' ? '🔑' : '⚡';
+      _pushLog(`${icon} ${obj.label} acquired! Proceed to EXIT.`, 'bonus');
+      exploreRun.score += 30;
+    }
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
