@@ -48,10 +48,10 @@ const PATROL_Y_FREQ         = 0.7;   // Y-axis frequency ratio; <1 creates figur
 const PATROL_HOMING_FRAC    = 0.15;  // weak homing fraction to prevent wandering off-screen
 
 // Stealth / detection
-const NOISE_THRESHOLD       = 38;    // noise level that alerts nearby enemies
+const NOISE_THRESHOLD       = 28;    // noise level that alerts nearby enemies
 const SILENCE_STEALTH_SECS  = 3.0;   // s of quiet → stealth mode
-const STEALTH_BREAK_NOISE   = 25;    // noise above this breaks stealth mode
-const UN_ALERT_NOISE        = 15;    // enemy un-alerts when noise drops below this
+const STEALTH_BREAK_NOISE   = 18;    // noise above this breaks stealth mode
+const UN_ALERT_NOISE        = 10;    // enemy un-alerts when noise drops below this
 const ENEMY_BASE_DETECT_R   = 18;    // base detection radius (0–100 grid units)
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between detection energy hits
 const NOISE_EVENT_COOLDOWN  = 20;    // ticks before another noise event

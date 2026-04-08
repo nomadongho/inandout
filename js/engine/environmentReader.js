@@ -114,8 +114,11 @@ export const micReader = {
     // Average the ring buffer to reduce frame-to-frame noise
     const smoothedAvg = this._ring.reduce((s, v) => s + v, 0) / this._ring.length;
 
-    // Normalise from 0–255 to 0–100
-    this.value = clamp(Math.round((smoothedAvg / 255) * 100), 0, 100);
+    // Normalise from 0–255 to 0–100 with amplification:
+    // The raw FFT bin average clusters in 0–80 for typical speech/noise,
+    // so we normalise against 80 (rather than 255) for a more responsive reading.
+    // Values above 80 average are capped at 100.
+    this.value = clamp(Math.round((smoothedAvg / 80) * 100), 0, 100);
 
     this._rafId = requestAnimationFrame(() => this._poll());
   },

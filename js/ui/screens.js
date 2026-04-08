@@ -283,16 +283,22 @@ export function buildExploreScreen() {
   meters.id        = 'explore-meters';
 
   const meterDefs = [
-    { key: 'visibility',     label: 'Visibility',     color: 'meter-blue'   },
-    { key: 'stealth',        label: 'Stealth',        color: 'meter-green'  },
-    { key: 'exposure',       label: 'Exposure',       color: 'meter-orange' },
-    { key: 'stability',      label: 'Stability',      color: 'meter-cyan'   },
-    { key: 'threatLevel',    label: 'Threat',         color: 'meter-red'    },
-    { key: 'energyModifier', label: 'Efficiency',     color: 'meter-yellow' },
+    { key: 'visibility',     label: 'Visibility',     color: 'meter-blue',
+      info: 'Ambient light + screen brightness + time of day. High = brighter environment — better sight but more exposed.' },
+    { key: 'stealth',        label: 'Stealth',        color: 'meter-green',
+      info: 'Quiet + still + dark = high stealth. Stay silent (noise < 18) for 3 s to enter GHOST mode — enemies\' detection radius shrinks to 35%.' },
+    { key: 'exposure',       label: 'Exposure',       color: 'meter-orange',
+      info: 'Noise + ambient light + daytime. High = you are visible to enemies. Pushes up the Danger meter and raises detection risk.' },
+    { key: 'stability',      label: 'Stability',      color: 'meter-cyan',
+      info: 'Device tilt & movement. High = steady. Sudden tilt spikes cause a stumble — a noise burst and −5 energy.' },
+    { key: 'threatLevel',    label: 'Threat',         color: 'meter-red',
+      info: 'Noise + bright light + low stealth. High = dangerous environment. Enemies spawn faster and detection radius grows.' },
+    { key: 'energyModifier', label: 'Efficiency',     color: 'meter-yellow',
+      info: 'Battery level + quiet environment + night-time. High = lower passive energy drain and better recovery.' },
   ];
 
-  meterDefs.forEach(({ key, label, color }) => {
-    const m = buildMeter(label, derived[key], color);
+  meterDefs.forEach(({ key, label, color, info }) => {
+    const m = buildMeter(label, derived[key], color, info);
     m.id = `meter-${key}`;
     cache.exploreMeterEls[key] = m;
     meters.appendChild(m);
@@ -325,12 +331,20 @@ export function buildExploreScreen() {
   bar.appendChild(btnEnd);
   bar.appendChild(btnHome);
 
+  // ── Debug panel ────────────────────────────────────────────────────────────
+  const debugToggle = buildButton('🐛 Debug', () => _toggleDebugPanel('explore-debug'), 'btn-outline btn-small debug-toggle-btn');
+  const debugPanel  = document.createElement('div');
+  debugPanel.id        = 'explore-debug';
+  debugPanel.className = 'debug-panel debug-hidden';
+
   wrap.appendChild(hud);
   wrap.appendChild(dangerBar);
   wrap.appendChild(meters);
   wrap.appendChild(_gameCanvas.canvas);
   wrap.appendChild(logEl);
   wrap.appendChild(bar);
+  wrap.appendChild(debugToggle);
+  wrap.appendChild(debugPanel);
   app.appendChild(wrap);
 
   // Start the run, hook update callback
@@ -441,6 +455,9 @@ function _refreshExploreHUD() {
 
   // Log
   if (logEl) renderLog(logEl, exploreRun.log);
+
+  // Debug panel
+  _updateDebugPanel('explore-debug', 'explore');
 }
 
 function _showRunSummary() {
@@ -475,6 +492,98 @@ function _showRunSummary() {
   showModal(title, body, 'Back to Home', () => navigate('home'));
 }
 
+// ── DEBUG PANEL ───────────────────────────────────────────────────────────────
+
+/** Toggle the visibility of a debug panel by its element id. */
+function _toggleDebugPanel(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  el.classList.toggle('debug-hidden');
+  if (!el.classList.contains('debug-hidden')) {
+    _updateDebugPanel(panelId, panelId.includes('explore') ? 'explore' : 'survive');
+  }
+}
+
+/**
+ * Render the current sensor + derived values into a debug panel element.
+ * @param {string} panelId  element id
+ * @param {'explore'|'survive'} mode
+ */
+function _updateDebugPanel(panelId, mode) {
+  const el = document.getElementById(panelId);
+  if (!el || el.classList.contains('debug-hidden')) return;
+
+  const status = engine.getSensorStatus();
+  const usingS = engine.usingSensor;
+
+  /** A coloured badge text for sensor status */
+  function sensorBadge(stat, using) {
+    if (using)         return `<span class="debug-val active">${stat.toUpperCase()} ✓</span>`;
+    if (stat === 'denied' || stat === 'unsupported') return `<span class="debug-val bad">${stat.toUpperCase()}</span>`;
+    return `<span class="debug-val warn">SIM (${stat})</span>`;
+  }
+
+  /** Format a 0–100 value with colour coding */
+  function valClass(v, high = 'bad', low = 'ok', mid = 'warn', midThresh = [30, 70]) {
+    if (v >= midThresh[1]) return high;
+    if (v <= midThresh[0]) return low;
+    return mid;
+  }
+
+  const noiseClass   = valClass(sensorRaw.noiseLevel, 'bad', 'ok', 'warn');
+  const stealthClass = valClass(derived.stealth, 'ok', 'bad', 'warn');
+  const expClass     = valClass(derived.exposure, 'bad', 'ok', 'warn');
+
+  let modeRows = '';
+  if (mode === 'explore') {
+    const ghostClass  = exploreRun.inStealthMode ? 'ok' : 'warn';
+    const timerClass  = exploreRun.stealthTimerSec >= 1 ? 'ok' : 'warn';
+    modeRows = `
+      <div class="debug-section-title">Explore State</div>
+      <div class="debug-row"><span class="debug-key">Ghost Mode</span><span class="debug-val ${ghostClass}">${exploreRun.inStealthMode ? 'ON' : 'OFF'}</span></div>
+      <div class="debug-row"><span class="debug-key">Silence Timer</span><span class="debug-val ${timerClass}">${exploreRun.stealthTimerSec.toFixed(1)} s</span></div>
+      <div class="debug-row"><span class="debug-key">Energy</span><span class="debug-val">${Math.round(exploreRun.energy)}%</span></div>
+      <div class="debug-row"><span class="debug-key">Danger</span><span class="debug-val ${valClass(exploreRun.danger)}">${Math.round(exploreRun.danger)}%</span></div>
+      <div class="debug-row"><span class="debug-key">Enemies</span><span class="debug-val">${exploreRun.enemies.length}</span></div>
+    `;
+  } else {
+    modeRows = `
+      <div class="debug-section-title">Survive State</div>
+      <div class="debug-row"><span class="debug-key">Day</span><span class="debug-val">${survive.day}</span></div>
+      <div class="debug-row"><span class="debug-key">Resources</span><span class="debug-val ${valClass(survive.resources, 'ok', 'bad', 'warn')}">${Math.round(survive.resources)}%</span></div>
+      <div class="debug-row"><span class="debug-key">Health</span><span class="debug-val ${valClass(survive.health, 'ok', 'bad', 'warn')}">${Math.round(survive.health)}%</span></div>
+      <div class="debug-row"><span class="debug-key">Stress</span><span class="debug-val ${valClass(survive.stress, 'bad', 'ok', 'warn')}">${Math.round(survive.stress)}%</span></div>
+      <div class="debug-row"><span class="debug-key">Shelter Energy</span><span class="debug-val ${valClass(survive.shelterEnergy, 'ok', 'bad', 'warn')}">${Math.round(survive.shelterEnergy)}%</span></div>
+    `;
+  }
+
+  el.innerHTML = `
+    <div class="debug-section-title">Sensor Sources</div>
+    <div class="debug-row"><span class="debug-key">🎤 Noise</span>${sensorBadge(status.noise, usingS.noise)}</div>
+    <div class="debug-row"><span class="debug-key">💡 Light</span>${sensorBadge(status.light, usingS.light)}</div>
+    <div class="debug-row"><span class="debug-key">🔋 Battery</span>${sensorBadge(status.battery, usingS.battery)}</div>
+    <div class="debug-row"><span class="debug-key">📱 Motion</span>${sensorBadge(status.motion, usingS.motion)}</div>
+
+    <div class="debug-section-title">Raw Sensors</div>
+    <div class="debug-row"><span class="debug-key">Noise Level</span><span class="debug-val ${noiseClass}">${Math.round(sensorRaw.noiseLevel)}</span></div>
+    <div class="debug-row"><span class="debug-key">Ambient Light</span><span class="debug-val">${Math.round(sensorRaw.ambientLight)}</span></div>
+    <div class="debug-row"><span class="debug-key">Battery</span><span class="debug-val">${Math.round(sensorRaw.batteryLevel)}%</span></div>
+    <div class="debug-row"><span class="debug-key">Brightness Pref</span><span class="debug-val">${Math.round(sensorRaw.brightnessLevel)}</span></div>
+    <div class="debug-row"><span class="debug-key">Tilt X / Y</span><span class="debug-val">${sensorRaw.tiltX.toFixed(2)} / ${sensorRaw.tiltY.toFixed(2)}</span></div>
+    <div class="debug-row"><span class="debug-key">Hour</span><span class="debug-val">${sensorRaw.hour}:00</span></div>
+
+    <div class="debug-section-title">Derived Values</div>
+    <div class="debug-row"><span class="debug-key">Visibility</span><span class="debug-val">${Math.round(derived.visibility)}</span></div>
+    <div class="debug-row"><span class="debug-key">Exposure</span><span class="debug-val ${expClass}">${Math.round(derived.exposure)}</span></div>
+    <div class="debug-row"><span class="debug-key">Stealth</span><span class="debug-val ${stealthClass}">${Math.round(derived.stealth)}</span></div>
+    <div class="debug-row"><span class="debug-key">Stability</span><span class="debug-val">${Math.round(derived.stability)}</span></div>
+    <div class="debug-row"><span class="debug-key">Efficiency</span><span class="debug-val">${Math.round(derived.energyModifier)}</span></div>
+    <div class="debug-row"><span class="debug-key">Threat</span><span class="debug-val ${valClass(derived.threatLevel)}">${Math.round(derived.threatLevel)}</span></div>
+
+    ${modeRows}
+  `;
+}
+
 // ── SURVIVE SCREEN ────────────────────────────────────────────────────────────
 
 export function buildSurviveScreen() {
@@ -498,13 +607,17 @@ export function buildSurviveScreen() {
   meters.id        = 'survive-meters';
 
   const meterDefs = [
-    { key: 'resources',     label: 'Resources',       color: 'meter-green'  },
-    { key: 'health',        label: 'Health',          color: 'meter-blue'   },
-    { key: 'stress',        label: 'Stress',          color: 'meter-orange' },
-    { key: 'shelterEnergy', label: 'Shelter Energy',  color: 'meter-cyan'   },
+    { key: 'resources',     label: 'Resources',       color: 'meter-green',
+      info: 'Food & supplies (0–100). Decreases −8 per day. Gained by Explore. Required for Rest (−5), Hide (−3), Recharge (−8). Zero = starvation.' },
+    { key: 'health',        label: 'Health',          color: 'meter-blue',
+      info: 'Physical condition. Rest and medicine restore it. Encounters, chronic stress, and starvation reduce it. Critical below 20.' },
+    { key: 'stress',        label: 'Stress',          color: 'meter-orange',
+      info: 'Mental pressure. Noise makes Rest and Hide less effective. Very high stress (>80) causes health damage and encounter mistakes.' },
+    { key: 'shelterEnergy', label: 'Shelter Energy',  color: 'meter-cyan',
+      info: 'Shelter power reserves. Recharge action restores it (amount depends on device battery). Drains −5 per day. Low power worsens rest quality.' },
   ];
-  meterDefs.forEach(({ key, label, color }) => {
-    const m = buildMeter(label, survive[key], color);
+  meterDefs.forEach(({ key, label, color, info }) => {
+    const m = buildMeter(label, survive[key], color, info);
     m.id = `smeter-${key}`;
     cache.surviveMeterEls[key] = m;
     meters.appendChild(m);
@@ -542,6 +655,15 @@ export function buildSurviveScreen() {
   wrap.appendChild(logEl);
   wrap.appendChild(bar);
   wrap.appendChild(extraBar);
+
+  // ── Debug panel ────────────────────────────────────────────────────────────
+  const debugToggle = buildButton('🐛 Debug', () => _toggleDebugPanel('survive-debug'), 'btn-outline btn-small debug-toggle-btn');
+  const debugPanel  = document.createElement('div');
+  debugPanel.id        = 'survive-debug';
+  debugPanel.className = 'debug-panel debug-hidden';
+  wrap.appendChild(debugToggle);
+  wrap.appendChild(debugPanel);
+
   app.appendChild(wrap);
 
   updateSurviveScreen();
@@ -552,7 +674,8 @@ export function buildSurviveScreen() {
     if (envEl) _renderSurviveEnv(envEl);
     const barEl = document.getElementById('survive-action-bar');
     if (barEl) _buildSurviveActionBar(barEl);
-  }, 5000);
+    _updateDebugPanel('survive-debug', 'survive');
+  }, 2000);
 }
 
 export function teardownSurviveScreen() {
@@ -615,6 +738,9 @@ export function updateSurviveScreen() {
   // Rebuild action bar so condition hints reflect current sensors
   const barEl = document.getElementById('survive-action-bar');
   if (barEl) _buildSurviveActionBar(barEl);
+
+  // Debug panel
+  _updateDebugPanel('survive-debug', 'survive');
 }
 
 /**
