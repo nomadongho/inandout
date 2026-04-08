@@ -603,6 +603,15 @@ html, body {
   letter-spacing: 0.1em;
 }
 
+.best-days {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  margin-left: 0.5em;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
 .env-summary {
   background: var(--bg2);
   border: 1px solid var(--border);

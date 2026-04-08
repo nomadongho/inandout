@@ -16,7 +16,7 @@ import engine from '../engine/hybridRealityEngine.js';
 import { startRun, pauseRun, resumeRun, endRun } from '../modes/exploreMode.js';
 import {
   actionExplore, actionRest, actionHide, actionRecharge, actionNextDay,
-  resetAndSave, getSurviveAdvice,
+  actionTreat, resetAndSave, getSurviveAdvice,
 } from '../modes/surviveMode.js';
 import { formatTime } from '../utils.js';
 import { navigate } from '../nav.js';
@@ -708,7 +708,7 @@ export function updateSurviveScreen() {
     const advice = getSurviveAdvice();
 
     infoEl.innerHTML = `
-      <div class="day-counter">Day ${survive.day}</div>
+      <div class="day-counter">Day ${survive.day}${survive.bestDays > 0 ? ` <span class="best-days">Best: ${survive.bestDays}</span>` : ''}</div>
       ${badges.length ? `<div class="survive-status-row">${badges.join('')}</div>` : ''}
       ${advice ? `<div class="survive-advice">${advice}</div>` : ''}
     `;
@@ -787,6 +787,15 @@ function _getSurviveHints() {
   else if (isBright)  recharge = { text: '🟡 Light bonus available',     level: 'ok'   };
   else                recharge = { text: '🟡 Moderate efficiency',       level: 'warn' };
 
+  // TREAT
+  let treat;
+  if (survive.resources < 15)        treat = { text: '🔴 Not enough resources',   level: 'bad'  };
+  else if (survive.stress > 70 || survive.health < 40)
+                                     treat = { text: '🟢 Recommended — critical state', level: 'ok' };
+  else if (survive.stress > 50 || survive.health < 60)
+                                     treat = { text: '🟡 Would help — moderate state', level: 'warn' };
+  else                               treat = { text: '🟡 Costs 15 resources',     level: 'warn' };
+
   // NEXT DAY
   let nextDay;
   if (survive.health <= 0)        nextDay = { text: '💀 Health failed!',      level: 'bad'  };
@@ -795,7 +804,7 @@ function _getSurviveHints() {
   else if (survive.stress > 80)   nextDay = { text: '⚠ Stress critical!',     level: 'bad'  };
   else                            nextDay = { text: `→ Day ${survive.day + 1}`, level: 'ok'  };
 
-  return { rest, hide, explore, recharge, nextDay };
+  return { rest, hide, explore, recharge, treat, nextDay };
 }
 
 /**
@@ -810,6 +819,7 @@ function _buildSurviveActionBar(container) {
     { label: '😴 Rest',     hint: hints.rest,     fn: () => { actionRest();     updateSurviveScreen(); } },
     { label: '🫥 Hide',     hint: hints.hide,     fn: () => { actionHide();     updateSurviveScreen(); } },
     { label: '🔋 Recharge', hint: hints.recharge, fn: () => { actionRecharge(); updateSurviveScreen(); } },
+    { label: '💊 Treat',    hint: hints.treat,    fn: () => { actionTreat();    updateSurviveScreen(); } },
     { label: '🌅 Next Day', hint: hints.nextDay,  fn: () => { actionNextDay();  updateSurviveScreen(); } },
   ];
   actions.forEach(({ label, hint, fn }) => {

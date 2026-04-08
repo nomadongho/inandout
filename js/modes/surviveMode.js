@@ -41,12 +41,15 @@ export function saveSurvive() {
 
 /** Wipe the save and reset to defaults. */
 export function resetAndSave() {
+  // Preserve best-run record across resets
+  const best = Math.max(survive.bestDays || 0, survive.day);
   survive.day           = 1;
   survive.resources     = 50;
   survive.stress        = 20;
   survive.health        = 80;
   survive.shelterEnergy = 60;
   survive.log           = [];
+  survive.bestDays      = best;
   saveSurvive();
 }
 
@@ -329,14 +332,15 @@ export function actionRecharge() {
 /**
  * Advance to the next day.
  * Passive consumption, stress-driven health decay, random day event.
+ * Daily resource cost scales up every 10 days to increase challenge.
  */
 export function actionNextDay() {
   _log(`══ END OF DAY ${survive.day} ══`, 'action');
 
   survive.day += 1;
 
-  // Passive daily resource consumption
-  const dailyConsume = 8;
+  // Difficulty scaling: +1 resource consumed per 10 days survived
+  const dailyConsume = 8 + Math.floor(survive.day / 10);
   survive.resources = clamp(survive.resources - dailyConsume, 0, 100);
 
   // Natural overnight stress reduction
@@ -361,7 +365,11 @@ export function actionNextDay() {
   // Shelter energy passive overnight drain
   survive.shelterEnergy = clamp(survive.shelterEnergy - 5, 0, 100);
 
-  _log(`Day ${survive.day} begins. Resources −${dailyConsume}. Stress −${stressDecay}.`, 'info');
+  const consumeNote = dailyConsume > 8 ? ` (difficulty ×${Math.floor(survive.day / 10) + 1})` : '';
+  _log(`Day ${survive.day} begins. Resources −${dailyConsume}${consumeNote}. Stress −${stressDecay}.`, 'info');
+
+  // Milestone check (before random event, so it reads the new day)
+  _checkMilestone(survive.day);
 
   // Random event
   _rollDayEvent();
@@ -510,7 +518,108 @@ const DAY_EVENTS = [
       ]), 'warn'];
     },
   },
+  // ── New events ────────────────────────────────────────────────────────────
+  {
+    id: 'cold_night',
+    weight: 0.08,
+    condition: () => true,
+    apply: () => {
+      const drain = randInt(6, 12);
+      survive.shelterEnergy = clamp(survive.shelterEnergy - drain, 0, 100);
+      return [pickRandom([
+        `A bitterly cold night drained the shelter. Energy −${drain}.`,
+        `Temperatures dropped overnight. Shelter energy −${drain}.`,
+      ]), 'warn'];
+    },
+  },
+  {
+    id: 'lucky_find',
+    weight: 0.07,
+    condition: () => survive.resources < 50,
+    apply: () => {
+      const bonus = randInt(10, 20);
+      survive.resources = clamp(survive.resources + bonus, 0, 100);
+      return [pickRandom([
+        `You stumbled on a forgotten stash. Resources +${bonus}!`,
+        `A sealed container was wedged behind the wall. Resources +${bonus}!`,
+        `Someone left supplies near your shelter. Resources +${bonus}!`,
+      ]), 'bonus'];
+    },
+  },
+  {
+    id: 'rat_infestation',
+    weight: 0.07,
+    condition: () => survive.resources > 25,
+    apply: () => {
+      const decay = randInt(8, 16);
+      const stress = randInt(3, 7);
+      survive.resources = clamp(survive.resources - decay, 0, 100);
+      survive.stress    = clamp(survive.stress    + stress, 0, 100);
+      return [pickRandom([
+        `Rats got into the supplies. Resources −${decay}, Stress +${stress}.`,
+        `Infestation overnight — food spoiled. Resources −${decay}, Stress +${stress}.`,
+      ]), 'danger'];
+    },
+  },
+  {
+    id: 'clear_morning',
+    weight: 0.08,
+    condition: () => survive.stress > 25,
+    apply: () => {
+      const stressBonus = randInt(6, 12);
+      survive.stress = clamp(survive.stress - stressBonus, 0, 100);
+      return [pickRandom([
+        `A clear, still morning lifts your spirits. Stress −${stressBonus}.`,
+        `The dawn is unusually peaceful. You breathe easier. Stress −${stressBonus}.`,
+        `Silence and light. Just for a moment, everything feels manageable. Stress −${stressBonus}.`,
+      ]), 'bonus'];
+    },
+  },
+  {
+    id: 'dehydration',
+    weight: 0.07,
+    condition: () => survive.day > 4 && survive.resources < 30,
+    apply: () => {
+      const healthHit = randInt(5, 10);
+      const stressHit = randInt(4, 8);
+      survive.health = clamp(survive.health - healthHit, 0, 100);
+      survive.stress = clamp(survive.stress + stressHit, 0, 100);
+      return [`Dehydration takes a toll — low supplies hurt. Health −${healthHit}, Stress +${stressHit}.`, 'danger'];
+    },
+  },
+  {
+    id: 'signal_heard',
+    weight: 0.05,
+    condition: () => survive.day > 3,
+    apply: () => {
+      const bonus = randInt(12, 22);
+      survive.resources = clamp(survive.resources + bonus, 0, 100);
+      return [pickRandom([
+        `A distant signal led you to a full supply crate. Resources +${bonus}!`,
+        `Someone's beacon was broadcasting all night — you followed it at dawn. Resources +${bonus}!`,
+      ]), 'bonus'];
+    },
+  },
 ];
+
+// ── Milestone events ──────────────────────────────────────────────────────────
+
+/**
+ * Check if the new day hits a survival milestone and apply its reward.
+ */
+function _checkMilestone(day) {
+  const milestones = {
+    5:  { msg: '⭐ Day 5 — You\'ve found your footing. Resources +10.',    fn: () => { survive.resources = clamp(survive.resources + 10, 0, 100); } },
+    10: { msg: '🏅 Day 10 — A seasoned survivor. Health +10.',             fn: () => { survive.health    = clamp(survive.health    + 10, 0, 100); } },
+    15: { msg: '🔥 Day 15 — Battle-hardened. Stress −15.',                 fn: () => { survive.stress    = clamp(survive.stress    - 15, 0, 100); } },
+    20: { msg: '🌟 Day 20 — True resilience. Resources +15, Health +5.',   fn: () => { survive.resources = clamp(survive.resources + 15, 0, 100); survive.health = clamp(survive.health + 5, 0, 100); } },
+    30: { msg: '🏆 Day 30 — You are a legend. Resources +20, Health +10.', fn: () => { survive.resources = clamp(survive.resources + 20, 0, 100); survive.health = clamp(survive.health + 10, 0, 100); } },
+  };
+  if (milestones[day]) {
+    milestones[day].fn();
+    _log(milestones[day].msg, 'bonus');
+  }
+}
 
 function _rollDayEvent() {
   const eligible    = DAY_EVENTS.filter(e => e.condition());
@@ -532,6 +641,36 @@ function _rollDayEvent() {
 }
 
 // ── Strategic advice ──────────────────────────────────────────────────────────
+
+/**
+ * Player uses resources to treat wounds and calm nerves.
+ * High cost but strong stress/health recovery.
+ */
+export function actionTreat() {
+  const cost = 15;
+  _log('— TREAT —', 'action');
+
+  if (survive.resources < cost) {
+    _log(`Not enough resources to treat yourself (need ${cost}).`, 'danger');
+    return;
+  }
+
+  const stressReduce = randInt(18, 28);
+  const healthGain   = randInt(5, 10);
+
+  survive.resources = clamp(survive.resources - cost,          0, 100);
+  survive.stress    = clamp(survive.stress    - stressReduce,  0, 100);
+  survive.health    = clamp(survive.health    + healthGain,    0, 100);
+
+  _log(pickRandom([
+    'You take time to dress wounds and settle your nerves.',
+    'A careful meal and proper medical attention do wonders.',
+    'Rest, bandages, and quiet. You feel meaningfully better.',
+    'You patch up every scrape and force yourself to breathe.',
+  ]), 'bonus');
+  _log(`Stress −${stressReduce}. Health +${healthGain}. Resources −${cost}.`, 'info');
+  saveSurvive();
+}
 
 /**
  * Returns a single-line situational hint for the UI, or null if no advice.
