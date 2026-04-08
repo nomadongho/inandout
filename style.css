@@ -478,9 +478,10 @@ html, body {
   margin: 0 auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  width: 600px !important;
-  height: 600px !important;
+  width: 100%;
   max-width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto;
   background: #080810;
 }
 

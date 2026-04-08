@@ -212,8 +212,8 @@ export function buildGameCanvas() {
 
   const canvas = document.createElement('canvas');
   canvas.className = 'game-canvas';
-  canvas.width  = 600;
-  canvas.height = 600;
+  canvas.width  = 1024;
+  canvas.height = 1024;
 
   /**
    * Redraw the game canvas.
@@ -248,9 +248,20 @@ export function buildGameCanvas() {
 
     const pulse = (Math.sin(timestamp * 2 * Math.PI / PULSE_PERIOD_MS) + 1) / 2;
 
+    // Resize canvas to the stage's resolution (no stretching)
+    const desiredSize = (stage && stage.mapSize) ? stage.mapSize : 1024;
+    if (canvas.width !== desiredSize || canvas.height !== desiredSize) {
+      canvas.width  = desiredSize;
+      canvas.height = desiredSize;
+    }
+
     const ctx = canvas.getContext('2d');
     const W   = canvas.width;
     const H   = canvas.height;
+
+    // Scale factor relative to base resolution 600px — keeps UI elements
+    // (fonts, line widths, dot radii) proportionally sized at all resolutions.
+    const sc = W / 600;
 
     // helper: convert 0–100 grid → canvas px
     const gx = v => (v / 100) * W;
@@ -297,7 +308,7 @@ export function buildGameCanvas() {
 
     // ── Grid ──────────────────────────────────────────────────────────────
     ctx.strokeStyle = '#1a2a1a';
-    ctx.lineWidth   = 0.5;
+    ctx.lineWidth   = 0.5 * sc;
     for (let i = 0; i <= 10; i++) {
       ctx.beginPath(); ctx.moveTo(i * W / 10, 0); ctx.lineTo(i * W / 10, H); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i * H / 10); ctx.lineTo(W, i * H / 10); ctx.stroke();
@@ -311,8 +322,8 @@ export function buildGameCanvas() {
         ctx.fillRect(gx(w.x), gy(w.y), gw(w.w), gh(w.h));
         // Subtle top/left highlight to give walls depth
         ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        ctx.fillRect(gx(w.x), gy(w.y), gw(w.w), 1);
-        ctx.fillRect(gx(w.x), gy(w.y), 1, gh(w.h));
+        ctx.fillRect(gx(w.x), gy(w.y), gw(w.w), sc);
+        ctx.fillRect(gx(w.x), gy(w.y), sc, gh(w.h));
       });
     }
 
@@ -331,12 +342,12 @@ export function buildGameCanvas() {
         ctx.fillStyle = s.fill;
         ctx.fillRect(gx(p.x), gy(p.y), gw(p.w), gh(p.h));
         ctx.strokeStyle = s.stroke;
-        ctx.lineWidth   = 1.5;
-        ctx.strokeRect(gx(p.x) + 0.5, gy(p.y) + 0.5, gw(p.w) - 1, gh(p.h) - 1);
+        ctx.lineWidth   = 1.5 * sc;
+        ctx.strokeRect(gx(p.x) + 0.5 * sc, gy(p.y) + 0.5 * sc, gw(p.w) - sc, gh(p.h) - sc);
         // Top and left edge highlight for depth
         ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(gx(p.x), gy(p.y), gw(p.w), 1.5);
-        ctx.fillRect(gx(p.x), gy(p.y), 1.5, gh(p.h));
+        ctx.fillRect(gx(p.x), gy(p.y), gw(p.w), 1.5 * sc);
+        ctx.fillRect(gx(p.x), gy(p.y), 1.5 * sc, gh(p.h));
       });
     }
 
@@ -354,31 +365,31 @@ export function buildGameCanvas() {
         : ev.type === 'burst'
           ? `rgba(255,220,0,${alpha})`
           : `rgba(255,160,40,${alpha})`;
-      ctx.lineWidth = (ev.type === 'stumble' || ev.type === 'burst') ? 2 : 1;
+      ctx.lineWidth = (ev.type === 'stumble' || ev.type === 'burst') ? 2 * sc : sc;
       ctx.stroke();
     });
 
     // ── Escape beacon ─────────────────────────────────────────────────────
     const ex = gx(escapePoint.x);
     const ey = gy(escapePoint.y);
-    const beaconR = 8 + pulse * 6;
+    const beaconR = (8 + pulse * 6) * sc;
 
     const beaconGlow = ctx.createRadialGradient(ex, ey, 0, ex, ey, beaconR * 2.5);
     beaconGlow.addColorStop(0, `rgba(0,255,136,${0.3 + pulse * 0.2})`);
     beaconGlow.addColorStop(1, 'rgba(0,255,136,0)');
     ctx.fillStyle = beaconGlow;
     ctx.beginPath(); ctx.arc(ex, ey, beaconR * 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(ex, ey, 5 * sc, 0, Math.PI * 2);
     ctx.fillStyle = '#00ff88'; ctx.fill();
-    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('EXIT', ex, ey - 12);
+    ctx.font = `bold ${Math.round(9 * sc)}px monospace`; ctx.textAlign = 'center';
+    ctx.fillText('EXIT', ex, ey - 12 * sc);
 
     // ── Stage objectives ──────────────────────────────────────────────────
     objectives.forEach(obj => {
       if (obj.collected) return;
       const ox  = gx(obj.pos.x);
       const oy  = gy(obj.pos.y);
-      const objR = 7 + pulse * 3;
+      const objR = (7 + pulse * 3) * sc;
       // Glow
       const objGlow = ctx.createRadialGradient(ox, oy, 0, ox, oy, objR * 2.2);
       objGlow.addColorStop(0, `rgba(255,215,0,${0.25 + pulse * 0.15})`);
@@ -386,15 +397,15 @@ export function buildGameCanvas() {
       ctx.fillStyle = objGlow;
       ctx.beginPath(); ctx.arc(ox, oy, objR * 2.2, 0, Math.PI * 2); ctx.fill();
       // Core dot
-      ctx.beginPath(); ctx.arc(ox, oy, 5, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(ox, oy, 5 * sc, 0, Math.PI * 2);
       ctx.fillStyle = '#FFD700'; ctx.fill();
       // Ring
       ctx.beginPath(); ctx.arc(ox, oy, objR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255,215,0,${0.55 + pulse * 0.25})`; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = `rgba(255,215,0,${0.55 + pulse * 0.25})`; ctx.lineWidth = 1.5 * sc; ctx.stroke();
       // Label
-      ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.font = `bold ${Math.round(8 * sc)}px monospace`; ctx.textAlign = 'center';
       ctx.fillStyle = '#FFD700';
-      ctx.fillText(obj.label, ox, oy - 13);
+      ctx.fillText(obj.label, ox, oy - 13 * sc);
     });
 
     // ── Watchers: hearing circle + FOV cone + body + state icon ──────────
@@ -448,19 +459,19 @@ export function buildGameCanvas() {
         const pdy    = player.y - e.y;
         const inEar  = Math.sqrt(pdx * pdx + pdy * pdy) <= e.hearingRange;
 
-        let hearFill = 0.04, hearStroke = 0.32, hearLW = 1;
+        let hearFill = 0.04, hearStroke = 0.32, hearLW = sc;
         if (isHostile)  { hearFill = 0.06; hearStroke = 0.28; }
-        else if (inEar) { hearFill = 0.10 + pulse * 0.06; hearStroke = 0.65 + pulse * 0.2; hearLW = 1.8; }
+        else if (inEar) { hearFill = 0.10 + pulse * 0.06; hearStroke = 0.65 + pulse * 0.2; hearLW = 1.8 * sc; }
 
         const hearColor = isHostile ? 'rgba(255,80,80,' : (isSearching ? 'rgba(255,200,80,' : 'rgba(60,180,255,');
         ctx.beginPath(); ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
         ctx.fillStyle = `${hearColor}${hearFill})`; ctx.fill();
         ctx.beginPath(); ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
         ctx.strokeStyle = `${hearColor}${hearStroke})`;
-        ctx.lineWidth = hearLW; ctx.setLineDash([4, 6]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.lineWidth = hearLW; ctx.setLineDash([4 * sc, 6 * sc]); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = `${hearColor}${hearStroke * 0.9})`;
-        ctx.font = '9px monospace'; ctx.textAlign = 'center';
-        ctx.fillText('👂', emx, emy - hearPx - 3);
+        ctx.font = `${Math.round(9 * sc)}px monospace`; ctx.textAlign = 'center';
+        ctx.fillText('👂', emx, emy - hearPx - 3 * sc);
       }
 
       // ── FOV cone ──────────────────────────────────────────────────────
@@ -475,18 +486,18 @@ export function buildGameCanvas() {
       ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
       ctx.closePath();
       ctx.strokeStyle = `${coneBase}${strokeAlpha})`;
-      ctx.lineWidth   = isHostile ? 2 : 1; ctx.stroke();
+      ctx.lineWidth   = isHostile ? 2 * sc : sc; ctx.stroke();
 
       // ── Direction arrow ───────────────────────────────────────────────
       ctx.beginPath();
       ctx.moveTo(emx, emy);
-      ctx.lineTo(emx + Math.cos(facing) * 11, emy + Math.sin(facing) * 11);
+      ctx.lineTo(emx + Math.cos(facing) * 11 * sc, emy + Math.sin(facing) * 11 * sc);
       ctx.strokeStyle = `${coneBase}0.9)`;
-      ctx.lineWidth   = 1.5; ctx.stroke();
+      ctx.lineWidth   = 1.5 * sc; ctx.stroke();
 
       // ── Watcher body ──────────────────────────────────────────────────
       // Pulse size when alerted / chasing
-      const bodyR = isHostile ? (6 + pulse * 1.5) : 6;
+      const bodyR = isHostile ? (6 + pulse * 1.5) * sc : 6 * sc;
       ctx.beginPath(); ctx.arc(emx, emy, bodyR, 0, Math.PI * 2);
       ctx.fillStyle = bodyColor; ctx.fill();
 
@@ -494,22 +505,22 @@ export function buildGameCanvas() {
       const awareness = e.visualAwareness || 0;
       if (awareness > 3) {
         const aFrac  = Math.min(1, awareness / 100);
-        const barW   = 20;
+        const barW   = 20 * sc;
         const barX   = emx - barW / 2;
-        const barY   = emy - 22;
+        const barY   = emy - 22 * sc;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(barX - 1, barY - 1, barW + 2, 5);
+        ctx.fillRect(barX - sc, barY - sc, barW + 2 * sc, 5 * sc);
         const hue = Math.round(120 - aFrac * 120); // green → yellow → red
         ctx.fillStyle = `hsl(${hue},100%,55%)`;
-        ctx.fillRect(barX, barY, barW * aFrac, 4);
+        ctx.fillRect(barX, barY, barW * aFrac, 4 * sc);
       }
 
       // ── State icon above watcher ──────────────────────────────────────
       if (style.icon) {
         ctx.fillStyle = style.ic;
-        ctx.font      = isHostile ? 'bold 11px monospace' : 'bold 10px monospace';
+        ctx.font      = isHostile ? `bold ${Math.round(11 * sc)}px monospace` : `bold ${Math.round(10 * sc)}px monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText(style.icon, emx, awareness > 3 ? emy - 26 : emy - 11);
+        ctx.fillText(style.icon, emx, awareness > 3 ? emy - 26 * sc : emy - 11 * sc);
       }
 
       // ── LISTENING: oscillating scan arcs + ear pulse ──────────────────
@@ -522,8 +533,8 @@ export function buildGameCanvas() {
         ctx.closePath();
         ctx.fillStyle = `rgba(0,200,220,${0.18 + pulse * 0.08})`; ctx.fill();
         // Subtle "listening" pulse ring
-        ctx.beginPath(); ctx.arc(emx, emy, 10 + pulse * 4, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0,200,220,${0.35 + pulse * 0.2})`; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(emx, emy, (10 + pulse * 4) * sc, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0,200,220,${0.35 + pulse * 0.2})`; ctx.lineWidth = sc; ctx.stroke();
       }
 
       // ── INVESTIGATING: arrow toward target ───────────────────────────
@@ -531,10 +542,10 @@ export function buildGameCanvas() {
         const itx = gx(e.investigateTarget.x);
         const ity = gy(e.investigateTarget.y);
         ctx.beginPath(); ctx.moveTo(emx, emy); ctx.lineTo(itx, ity);
-        ctx.strokeStyle = 'rgba(255,160,0,0.28)'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = 'rgba(255,160,0,0.28)'; ctx.lineWidth = sc; ctx.setLineDash([3 * sc, 4 * sc]);
         ctx.stroke(); ctx.setLineDash([]);
-        ctx.beginPath(); ctx.arc(itx, ity, 4, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,160,0,0.45)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(itx, ity, 4 * sc, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,160,0,0.45)'; ctx.lineWidth = sc; ctx.stroke();
       }
     });
 
@@ -546,7 +557,7 @@ export function buildGameCanvas() {
       const pulseR = gw((noiseLevel / 100) * 45);
       const alpha  = (noiseLevel - 25) / 75 * 0.4;
       ctx.beginPath(); ctx.arc(px, py, pulseR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255,170,0,${alpha})`; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = `rgba(255,170,0,${alpha})`; ctx.lineWidth = 2 * sc; ctx.stroke();
     }
 
     // ── Player exposure radius ────────────────────────────────────────────
@@ -560,8 +571,8 @@ export function buildGameCanvas() {
           : `rgba(255,200,80,${expAlpha * 0.8})`;
       ctx.beginPath(); ctx.arc(px, py, expR, 0, Math.PI * 2);
       ctx.strokeStyle = expColor;
-      ctx.lineWidth   = isDetected ? 2 : 1;
-      ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.lineWidth   = isDetected ? 2 * sc : sc;
+      ctx.setLineDash([3 * sc, 3 * sc]); ctx.stroke(); ctx.setLineDash([]);
     }
 
     // ── Player body ───────────────────────────────────────────────────────
@@ -572,31 +583,31 @@ export function buildGameCanvas() {
     else                        { pColor = [255, 170, 0];  pLabel = 'CAUTION'; }
     const [pr, pg, pb] = pColor;
 
-    const pglow = ctx.createRadialGradient(px, py, 0, px, py, 18);
+    const pglow = ctx.createRadialGradient(px, py, 0, px, py, 18 * sc);
     pglow.addColorStop(0, `rgba(${pr},${pg},${pb},0.35)`);
     pglow.addColorStop(1, `rgba(${pr},${pg},${pb},0)`);
     ctx.fillStyle = pglow;
-    ctx.beginPath(); ctx.arc(px, py, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px, py, 18 * sc, 0, Math.PI * 2); ctx.fill();
 
-    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(px, py, 6 * sc, 0, Math.PI * 2);
     ctx.fillStyle = `rgb(${pr},${pg},${pb})`; ctx.fill();
-    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(pLabel, px, py - 12);
+    ctx.font = `bold ${Math.round(8 * sc)}px monospace`; ctx.textAlign = 'center';
+    ctx.fillText(pLabel, px, py - 12 * sc);
 
     if (inStealthMode) {
       // Outer pulse ring
-      ctx.beginPath(); ctx.arc(px, py, 20 + pulse * 6, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0,207,255,${0.22 + pulse * 0.15})`; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, (20 + pulse * 6) * sc, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.22 + pulse * 0.15})`; ctx.lineWidth = sc; ctx.stroke();
       // Inner solid ring
-      ctx.beginPath(); ctx.arc(px, py, 10 + pulse * 3, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0,207,255,${0.55 + pulse * 0.25})`; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, (10 + pulse * 3) * sc, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.55 + pulse * 0.25})`; ctx.lineWidth = 2 * sc; ctx.stroke();
     } else if (stealthTimerSec > 0.3) {
       // Stealth building indicator — arc grows from 0 to full circle as silence accumulates
       const progress = Math.min(1, stealthTimerSec / 3.0);
       ctx.beginPath();
-      ctx.arc(px, py, 12, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.arc(px, py, 12 * sc, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
       ctx.strokeStyle = `rgba(0,207,255,${0.3 + progress * 0.35})`;
-      ctx.lineWidth = 2; ctx.stroke();
+      ctx.lineWidth = 2 * sc; ctx.stroke();
     }
   }
 
