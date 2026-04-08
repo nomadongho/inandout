@@ -769,12 +769,14 @@ function _getSurviveHints() {
   const isBright    = derived.visibility    > 65;
   const isLowBat    = derived.energyModifier < 35;
   const isHighBat   = derived.energyModifier > 70;
-  const last        = survive.lastAction;
+  const counts      = survive.actionCounts || {};
 
-  // Helper: prepend a fatigue warning when this action was used last
+  // Helper: prepend a fatigue warning based on how many times used today
   function withFatigue(base, key) {
-    if (last !== key) return base;
-    return { text: `⚠ 연속 사용 — 효과 −30%`, level: 'bad' };
+    const n = counts[key] || 0;
+    if (n >= 2) return { text: `⚠ 오늘 3번째 사용 — 효과 −50%`, level: 'bad' };
+    if (n >= 1) return { text: `⚠ 오늘 2번째 사용 — 효과 −30%`, level: 'bad' };
+    return base;
   }
 
   // REST

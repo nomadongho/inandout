@@ -34,9 +34,9 @@ export function loadSurvive() {
       typeof e === 'string' ? { msg: e, type: 'info', time: 'D0' } : e,
     );
   }
-  // actionsToday / lastAction are transient — always reset on load (new session)
-  saved.actionsToday = 0;
-  saved.lastAction   = null;
+  // actionsToday / actionCounts are transient — always reset on load (new session)
+  saved.actionsToday  = 0;
+  saved.actionCounts  = {};
   Object.assign(survive, saved);
 }
 
@@ -57,7 +57,7 @@ export function resetAndSave() {
   survive.log           = [];
   survive.bestDays      = best;
   survive.actionsToday  = 0;
-  survive.lastAction    = null;
+  survive.actionCounts  = {};
   saveSurvive();
 }
 
@@ -86,20 +86,29 @@ function _env() {
  */
 function _recordAction(key) {
   survive.actionsToday += 1;
-  survive.lastAction    = key;
+  survive.actionCounts[key] = (survive.actionCounts[key] || 0) + 1;
 }
 
 /**
- * Apply a 30 % repeat penalty when the same action is used twice in a day.
+ * Apply a same-day repeat penalty based on how many times an action has
+ * already been used today (before this use is recorded).
+ * 2nd use → 30 % penalty (×0.7), 3rd+ use → 50 % penalty (×0.5).
  * Logs a visible warning so the player knows why yield is reduced.
  * @param {string} key        Action identifier.
  * @param {string} label      Human-readable name shown in the log.
- * @returns {number} multiplier — 0.7 if penalty applies, 1.0 otherwise.
+ * @returns {number} multiplier — 0.5 / 0.7 / 1.0 depending on use count.
  */
 function _repeatMultiplier(key, label) {
-  if (survive.lastAction !== key) return 1.0;
-  _log(`⚠ FATIGUE: Using ${label} twice today — effectiveness −30%.`, 'warn');
-  return 0.7;
+  const count = survive.actionCounts[key] || 0;
+  if (count >= 2) {
+    _log(`⚠ FATIGUE: Using ${label} a 3rd time today — effectiveness −50%.`, 'warn');
+    return 0.5;
+  }
+  if (count >= 1) {
+    _log(`⚠ FATIGUE: Using ${label} twice today — effectiveness −30%.`, 'warn');
+    return 0.7;
+  }
+  return 1.0;
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -393,7 +402,7 @@ export function actionNextDay() {
 
   // Reset daily action tracking
   survive.actionsToday = 0;
-  survive.lastAction   = null;
+  survive.actionCounts = {};
 
   // Difficulty scaling: +1 resource consumed per 10 days survived (kicks in from day 11)
   const scaling      = Math.floor((survive.day - 1) / 10);
