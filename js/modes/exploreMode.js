@@ -68,11 +68,11 @@ const ENEMY_ALERT_MAX_TICKS = 60;    // auto-cancel alert after ~6 s if not re-t
 // a watcher's FOV range — it only affects the player's own detection radius.
 const ENEMY_GROUPS = [
   // 0 — standard: balanced sight and hearing
-  { fovRange: 16, fovHalfAngle: Math.PI / 3.6, hearingRange: 28, speedMult: 1.0 },
+  { fovRange: 11, fovHalfAngle: Math.PI / 4.5, hearingRange: 22, speedMult: 0.75 },
   // 1 — scout: short sight, acute hearing, fast
-  { fovRange: 12, fovHalfAngle: Math.PI / 5.0, hearingRange: 42, speedMult: 1.4 },
+  { fovRange:  8, fovHalfAngle: Math.PI / 6.0, hearingRange: 32, speedMult: 1.0  },
   // 2 — guardian: wide FOV, poor hearing, slow
-  { fovRange: 22, fovHalfAngle: Math.PI / 3.0, hearingRange: 16, speedMult: 0.7 },
+  { fovRange: 15, fovHalfAngle: Math.PI / 3.6, hearingRange: 12, speedMult: 0.55 },
 ];
 
 // Sound-reaction behaviour (triggered when noise reaches NOISE_THRESHOLD)
@@ -263,7 +263,7 @@ function spawnEnemy() {
     id:              _enemyId++,
     x:               ex,
     y:               ey,
-    speed:           randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100) * group.speedMult,
+    speed:           randFloat(0.2, 0.55) * (1 + derived.threatLevel / 100) * group.speedMult,
     fovRange:        group.fovRange,     // updated each tick by env factors
     fovHalfAngle:    group.fovHalfAngle,
     hearingRange:    group.hearingRange,
