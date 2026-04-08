@@ -202,7 +202,7 @@ export function buildSensorRow(id, label, status, valueStr) {
 
 /**
  * Build a full game canvas for Explore mode.
- * Displays: shadow zones, escape beacon, enemy detection radii, player state.
+ * Displays: shadow zones, escape beacon, enemy cone FOVs, player exposure radius.
  *
  * @returns {{ canvas: HTMLCanvasElement, draw: Function }}
  */
@@ -217,21 +217,23 @@ export function buildGameCanvas() {
   /**
    * Redraw the game canvas.
    * @param {{
-   *   player:         {x:number, y:number},
-   *   enemies:        Array<{x,y,detectionRadius,alerted}>,
-   *   escapePoint:    {x:number, y:number},
-   *   inStealthMode:  boolean,
-   *   isDetected:     boolean,
-   *   shadowCoverage: number,
-   *   noiseLevel:     number,
-   *   ambientLight:   number,
-   *   timestamp:      number,   rAF timestamp for smooth animation
+   *   player:               {x:number, y:number},
+   *   enemies:              Array<{x,y,fovRange,fovHalfAngle,facingAngle,alerted}>,
+   *   escapePoint:          {x:number, y:number},
+   *   inStealthMode:        boolean,
+   *   isDetected:           boolean,
+   *   shadowCoverage:       number,
+   *   noiseLevel:           number,
+   *   ambientLight:         number,
+   *   playerDetectionRadius: number,
+   *   timestamp:            number,   rAF timestamp for smooth animation
    * }} state
    */
   function draw(state) {
     const {
       player, enemies, escapePoint,
       inStealthMode, isDetected, shadowCoverage, noiseLevel,
+      playerDetectionRadius = 0,
       timestamp = 0,
     } = state;
 
@@ -302,31 +304,49 @@ export function buildGameCanvas() {
     ctx.textAlign   = 'center';
     ctx.fillText('EXIT', ex, ey - 12);
 
-    // ── Enemies: detection radius + body ────────────────────────────────────
+    // ── Enemies: cone FOV + body ──────────────────────────────────────────────
     enemies.forEach(e => {
-      const emx   = (e.x / 100) * W;
-      const emy   = (e.y / 100) * H;
-      const rPx   = (e.detectionRadius / 100) * W;
+      const emx        = (e.x / 100) * W;
+      const emy        = (e.y / 100) * H;
+      const rangePx    = (e.fovRange / 100) * W;
+      const halfAngle  = e.fovHalfAngle || (Math.PI / 3.6);
+      const facing     = e.facingAngle  || 0;
 
-      // Detection radius fill
-      const fillAlpha = e.alerted ? 0.12 : 0.06;
-      const fillColor = e.alerted ? `rgba(255,50,50,${fillAlpha})` : `rgba(255,120,0,${fillAlpha})`;
+      // ── Cone fill ──────────────────────────────────────────────────────────
+      const fillAlpha = e.alerted ? 0.18 : 0.08;
+      const fillColor = e.alerted
+        ? `rgba(255,50,50,${fillAlpha})`
+        : `rgba(255,120,0,${fillAlpha})`;
+
       ctx.beginPath();
-      ctx.arc(emx, emy, rPx, 0, Math.PI * 2);
+      ctx.moveTo(emx, emy);
+      ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
+      ctx.closePath();
       ctx.fillStyle = fillColor;
       ctx.fill();
 
-      // Detection radius ring
-      const ringAlpha = e.alerted ? (0.5 + pulse * 0.3) : 0.35;
+      // ── Cone outline ───────────────────────────────────────────────────────
+      const ringAlpha = e.alerted ? (0.55 + pulse * 0.3) : 0.40;
       ctx.beginPath();
-      ctx.arc(emx, emy, rPx, 0, Math.PI * 2);
+      ctx.moveTo(emx, emy);
+      ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
+      ctx.closePath();
       ctx.strokeStyle = e.alerted
         ? `rgba(255,50,50,${ringAlpha})`
         : `rgba(255,120,0,${ringAlpha})`;
-      ctx.lineWidth = e.alerted ? 2 : 1;
+      ctx.lineWidth = e.alerted ? 1.5 : 1;
       ctx.stroke();
 
-      // Enemy body
+      // ── Direction arrow (short line in facing direction) ───────────────────
+      const arrowLen = 10;
+      ctx.beginPath();
+      ctx.moveTo(emx, emy);
+      ctx.lineTo(emx + Math.cos(facing) * arrowLen, emy + Math.sin(facing) * arrowLen);
+      ctx.strokeStyle = e.alerted ? 'rgba(255,80,80,0.9)' : 'rgba(255,160,60,0.8)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+      // ── Enemy body ─────────────────────────────────────────────────────────
       ctx.beginPath();
       ctx.arc(emx, emy, 6, 0, Math.PI * 2);
       ctx.fillStyle = e.alerted ? '#ff3333' : '#ff7700';
@@ -354,9 +374,29 @@ export function buildGameCanvas() {
       ctx.stroke();
     }
 
-    // ── Player ────────────────────────────────────────────────────────────
+    // ── Player exposure radius (how detectable the player is) ─────────────
     const px = (player.x / 100) * W;
     const py = (player.y / 100) * H;
+
+    if (playerDetectionRadius > 0) {
+      const expR    = (playerDetectionRadius / 100) * W;
+      const expAlpha = isDetected ? (0.45 + pulse * 0.25) : 0.28;
+      const expColor = inStealthMode
+        ? `rgba(0,207,255,${expAlpha})`
+        : isDetected
+          ? `rgba(255,68,68,${expAlpha})`
+          : `rgba(255,200,80,${expAlpha * 0.8})`;
+
+      ctx.beginPath();
+      ctx.arc(px, py, expR, 0, Math.PI * 2);
+      ctx.strokeStyle = expColor;
+      ctx.lineWidth   = isDetected ? 2 : 1;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // ── Player ────────────────────────────────────────────────────────────
 
     // Choose colour based on state
     let pColor, pLabel;

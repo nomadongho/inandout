@@ -51,8 +51,9 @@ export const exploreRun = {
   escaped:        false,            // win condition reached
   inStealthMode:  false,            // silence-based ghost mode
   shadowCoverage: 0,                // 0–1: how deep in shadow the player is
-  isDetected:     false,            // true this tick if an enemy spotted player
-  stealthTimerSec: 0,               // seconds of consecutive silence
+  isDetected:           false,       // true this tick if an enemy spotted player
+  stealthTimerSec:      0,           // seconds of consecutive silence
+  playerDetectionRadius: 0,          // 0–30 grid units: current player exposure size
 };
 
 /**
@@ -89,8 +90,9 @@ export function resetExploreRun() {
   exploreRun.escaped        = false;
   exploreRun.inStealthMode  = false;
   exploreRun.shadowCoverage = 0;
-  exploreRun.isDetected     = false;
-  exploreRun.stealthTimerSec = 0;
+  exploreRun.isDetected         = false;
+  exploreRun.stealthTimerSec    = 0;
+  exploreRun.playerDetectionRadius = 0;
 }
 
 /** Reset survive state to fresh values (new game). */
