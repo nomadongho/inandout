@@ -67,6 +67,9 @@ export const survive = {
   health:        80,  // 0–100
   shelterEnergy: 60,  // 0–100
   log:           [],  // string[]
+  bestDays:      0,   // highest day reached across all runs
+  actionsToday:  0,   // actions taken this day (resets on Next Day)
+  lastAction:    null, // key of the most recent action this day (for repeat penalty)
 };
 
 /** Transient UI flags */

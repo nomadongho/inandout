@@ -16,7 +16,7 @@ import engine from '../engine/hybridRealityEngine.js';
 import { startRun, pauseRun, resumeRun, endRun } from '../modes/exploreMode.js';
 import {
   actionExplore, actionRest, actionHide, actionRecharge, actionNextDay,
-  resetAndSave, getSurviveAdvice,
+  actionTreat, resetAndSave, getSurviveAdvice, ACTIONS_PER_DAY,
 } from '../modes/surviveMode.js';
 import { formatTime } from '../utils.js';
 import { navigate } from '../nav.js';
@@ -708,8 +708,20 @@ export function updateSurviveScreen() {
 
     const advice = getSurviveAdvice();
 
+    // Action slot pips: ● = used, ○ = available
+    const pips = Array.from({ length: ACTIONS_PER_DAY }, (_, i) =>
+      `<span class="action-pip ${i < survive.actionsToday ? 'action-pip-used' : ''}">${i < survive.actionsToday ? '●' : '○'}</span>`
+    ).join('');
+    const slotsLeft = ACTIONS_PER_DAY - survive.actionsToday;
+    const slotLabel = survive.actionsToday === 0
+      ? '<span class="action-slots-warn">행동 후 다음날로 넘어갈 수 있어요</span>'
+      : slotsLeft === 0
+        ? '<span class="action-slots-full">슬롯 소진 — 다음날로 넘어가세요</span>'
+        : `<span class="action-slots-info">남은 행동 ${slotsLeft}회</span>`;
+
     infoEl.innerHTML = `
-      <div class="day-counter">Day ${survive.day}</div>
+      <div class="day-counter">Day ${survive.day}${survive.bestDays > 0 ? ` <span class="best-days">Best: ${survive.bestDays}</span>` : ''}</div>
+      <div class="action-pips">${pips} ${slotLabel}</div>
       ${badges.length ? `<div class="survive-status-row">${badges.join('')}</div>` : ''}
       ${advice ? `<div class="survive-advice">${advice}</div>` : ''}
     `;
@@ -748,7 +760,7 @@ export function updateSurviveScreen() {
 
 /**
  * Compute current sensor condition hints for each survive action.
- * Returns {explore, rest, hide, recharge, nextDay} — each {text, level}.
+ * Returns {explore, rest, hide, recharge, treat, nextDay} — each {text, level}.
  */
 function _getSurviveHints() {
   const isVeryNoisy = derived.exposure      > 78;
@@ -757,6 +769,13 @@ function _getSurviveHints() {
   const isBright    = derived.visibility    > 65;
   const isLowBat    = derived.energyModifier < 35;
   const isHighBat   = derived.energyModifier > 70;
+  const last        = survive.lastAction;
+
+  // Helper: prepend a fatigue warning when this action was used last
+  function withFatigue(base, key) {
+    if (last !== key) return base;
+    return { text: `⚠ 연속 사용 — 효과 −30%`, level: 'bad' };
+  }
 
   // REST
   let rest;
@@ -764,6 +783,7 @@ function _getSurviveHints() {
   else if (isNoisy)    rest = { text: '🟡 Noisy — rest reduced',       level: 'warn' };
   else if (isDark)     rest = { text: '🟢 Dark & quiet — deep rest',   level: 'ok'   };
   else                 rest = { text: '🟢 Quiet — good rest',          level: 'ok'   };
+  rest = withFatigue(rest, 'rest');
 
   // HIDE
   let hide;
@@ -772,6 +792,7 @@ function _getSurviveHints() {
   else if (isVeryNoisy)        hide = { text: '🔴 Very noisy — unsafe',   level: 'bad'  };
   else if (isNoisy)            hide = { text: '🟡 Noisy — stay alert',    level: 'warn' };
   else                         hide = { text: '🟡 Moderate conditions',   level: 'warn' };
+  hide = withFatigue(hide, 'hide');
 
   // EXPLORE
   let explore;
@@ -780,6 +801,7 @@ function _getSurviveHints() {
   else if (derived.stealth > 65)         explore = { text: '🟢 Good stealth — safe run', level: 'ok'   };
   else if (isLowBat)                     explore = { text: '🟡 Low battery — tiring',    level: 'warn' };
   else                                   explore = { text: '🟢 Clear conditions',        level: 'ok'   };
+  explore = withFatigue(explore, 'explore');
 
   // RECHARGE
   let recharge;
@@ -787,16 +809,28 @@ function _getSurviveHints() {
   else if (isLowBat)  recharge = { text: '🔴 Low battery — poor yield',  level: 'bad'  };
   else if (isBright)  recharge = { text: '🟡 Light bonus available',     level: 'ok'   };
   else                recharge = { text: '🟡 Moderate efficiency',       level: 'warn' };
+  recharge = withFatigue(recharge, 'recharge');
+
+  // TREAT
+  let treat;
+  if (survive.resources < 15)        treat = { text: '🔴 Not enough resources',   level: 'bad'  };
+  else if (survive.stress > 70 || survive.health < 40)
+                                     treat = { text: '🟢 Recommended — critical state', level: 'ok' };
+  else if (survive.stress > 50 || survive.health < 60)
+                                     treat = { text: '🟡 Would help — moderate state', level: 'warn' };
+  else                               treat = { text: '🟡 Costs 15 resources',     level: 'warn' };
+  treat = withFatigue(treat, 'treat');
 
   // NEXT DAY
   let nextDay;
-  if (survive.health <= 0)        nextDay = { text: '💀 Health failed!',      level: 'bad'  };
-  else if (survive.health < 20)   nextDay = { text: '⚠ Health critical!',     level: 'bad'  };
-  else if (survive.resources <= 0) nextDay = { text: '⚠ No resources!',       level: 'bad'  };
-  else if (survive.stress > 80)   nextDay = { text: '⚠ Stress critical!',     level: 'bad'  };
-  else                            nextDay = { text: `→ Day ${survive.day + 1}`, level: 'ok'  };
+  if (survive.actionsToday === 0)  nextDay = { text: '⛔ 먼저 행동하세요',        level: 'bad'  };
+  else if (survive.health <= 0)    nextDay = { text: '💀 Health failed!',         level: 'bad'  };
+  else if (survive.health < 20)    nextDay = { text: '⚠ Health critical!',        level: 'bad'  };
+  else if (survive.resources <= 0) nextDay = { text: '⚠ No resources!',           level: 'bad'  };
+  else if (survive.stress > 80)    nextDay = { text: '⚠ Stress critical!',        level: 'bad'  };
+  else                             nextDay = { text: `→ Day ${survive.day + 1}`,   level: 'ok'  };
 
-  return { rest, hide, explore, recharge, nextDay };
+  return { rest, hide, explore, recharge, treat, nextDay };
 }
 
 /**
@@ -805,18 +839,26 @@ function _getSurviveHints() {
  */
 function _buildSurviveActionBar(container) {
   container.innerHTML = '';
-  const hints = _getSurviveHints();
+  const hints    = _getSurviveHints();
+  const slotsMax = survive.actionsToday >= ACTIONS_PER_DAY;  // all slots used
+  const noAction = survive.actionsToday === 0;               // nothing done yet
+
   const actions = [
-    { label: '🔍 Explore', hint: hints.explore,  fn: () => { actionExplore();  updateSurviveScreen(); } },
-    { label: '😴 Rest',     hint: hints.rest,     fn: () => { actionRest();     updateSurviveScreen(); } },
-    { label: '🫥 Hide',     hint: hints.hide,     fn: () => { actionHide();     updateSurviveScreen(); } },
-    { label: '🔋 Recharge', hint: hints.recharge, fn: () => { actionRecharge(); updateSurviveScreen(); } },
-    { label: '🌅 Next Day', hint: hints.nextDay,  fn: () => { actionNextDay();  updateSurviveScreen(); } },
+    { label: '🔍 Explore', hint: hints.explore,  fn: () => { actionExplore();  updateSurviveScreen(); }, key: 'action' },
+    { label: '😴 Rest',     hint: hints.rest,     fn: () => { actionRest();     updateSurviveScreen(); }, key: 'action' },
+    { label: '🫥 Hide',     hint: hints.hide,     fn: () => { actionHide();     updateSurviveScreen(); }, key: 'action' },
+    { label: '🔋 Recharge', hint: hints.recharge, fn: () => { actionRecharge(); updateSurviveScreen(); }, key: 'action' },
+    { label: '💊 Treat',    hint: hints.treat,    fn: () => { actionTreat();    updateSurviveScreen(); }, key: 'action' },
+    { label: '🌅 Next Day', hint: hints.nextDay,  fn: () => { actionNextDay();  updateSurviveScreen(); }, key: 'nextday' },
   ];
-  actions.forEach(({ label, hint, fn }) => {
+  actions.forEach(({ label, hint, fn, key }) => {
     const card   = document.createElement('div');
     card.className = 'action-card';
-    card.appendChild(buildButton(label, fn, 'btn-action'));
+    const btn = buildButton(label, fn, 'btn-action');
+    // Disable action buttons when all slots are used; disable Next Day when nothing done yet
+    if (key === 'action' && slotsMax) btn.disabled = true;
+    if (key === 'nextday' && noAction) btn.disabled = true;
+    card.appendChild(btn);
     const hintEl = document.createElement('div');
     hintEl.className   = `action-hint action-hint-${hint.level}`;
     hintEl.textContent = hint.text;
