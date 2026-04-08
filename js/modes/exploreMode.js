@@ -76,8 +76,9 @@ const ENEMY_GROUPS = [
 ];
 
 // Sound-reaction behaviour (triggered when noise reaches NOISE_THRESHOLD)
-const SOUND_REACT_TICKS   = 25;   // ticks a watcher spends checking the sound source
-const SOUND_CONFIRM_NOISE = 22;   // noise still above this during check → watcher goes alert
+const SOUND_REACT_TICKS       = 25;   // ticks a watcher spends checking the sound source
+const SOUND_CONFIRM_NOISE     = 22;   // noise still above this during check → watcher goes alert
+const SOUND_REACTION_TURN_SPD = 0.25; // fraction of remaining angle closed per tick when turning
 
 // Environment
 const SHADOW_LIGHT_THRESHOLD= 40;    // ambient light below this = shadow coverage
@@ -677,7 +678,7 @@ function _updateEnemies() {
       const sdy = e.soundSourceY - e.y;
       const targetAngle = Math.atan2(sdy, sdx);
       const ad = _angleDiff(targetAngle, e.facingAngle);
-      e.facingAngle += ad * 0.25; // gradually turn toward the sound
+      e.facingAngle += ad * SOUND_REACTION_TURN_SPD; // gradually turn toward the sound
 
       if (e.soundReactTicks > 0) e.soundReactTicks--;
 
