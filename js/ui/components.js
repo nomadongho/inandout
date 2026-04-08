@@ -324,18 +324,57 @@ export function buildGameCanvas() {
       const coneBase = e.alerted ? 'rgba(255,50,50,' : (isSoundReacting ? REACT_CONE_BASE : GROUP_CONE_BASE[gid]);
       const bodyColor = e.alerted ? '#ff3333' : (isSoundReacting ? REACT_BODY_COLOR : GROUP_BODY_COLOR[gid]);
 
-      // ── Hearing range (faint dashed circle) ───────────────────────────────
+      // ── Hearing range circle ──────────────────────────────────────────────
       if (e.hearingRange) {
         const hearPx = (e.hearingRange / 100) * W;
+
+        // Check whether the player is inside this watcher's hearing range
+        const pdx       = player.x - e.x;
+        const pdy       = player.y - e.y;
+        const playerInRange = Math.sqrt(pdx * pdx + pdy * pdy) <= e.hearingRange;
+
+        // Hearing range uses a distinct blue/teal palette to separate it from
+        // the orange/red FOV cone.  It brightens when the player is inside.
+        let hearFillAlpha, hearStrokeAlpha, hearLineWidth;
+        if (e.alerted) {
+          hearFillAlpha   = 0.06;
+          hearStrokeAlpha = 0.30;
+          hearLineWidth   = 1.2;
+        } else if (playerInRange) {
+          // Player is within earshot — make the zone clearly visible
+          hearFillAlpha   = 0.10 + pulse * 0.06;
+          hearStrokeAlpha = 0.70 + pulse * 0.20;
+          hearLineWidth   = 1.8;
+        } else {
+          hearFillAlpha   = 0.04;
+          hearStrokeAlpha = 0.35;
+          hearLineWidth   = 1.2;
+        }
+
+        const hearColor = e.alerted
+          ? 'rgba(255,80,80,'
+          : (isSoundReacting ? 'rgba(255,200,80,' : 'rgba(60,180,255,');
+
+        // Zone fill
         ctx.beginPath();
         ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
-        ctx.strokeStyle = e.alerted
-          ? 'rgba(255,80,80,0.12)'
-          : (isSoundReacting ? 'rgba(255,180,0,0.18)' : `${coneBase}0.10)`);
-        ctx.lineWidth = 0.7;
-        ctx.setLineDash([2, 5]);
+        ctx.fillStyle = `${hearColor}${hearFillAlpha})`;
+        ctx.fill();
+
+        // Zone outline (dashed)
+        ctx.beginPath();
+        ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
+        ctx.strokeStyle = `${hearColor}${hearStrokeAlpha})`;
+        ctx.lineWidth   = hearLineWidth;
+        ctx.setLineDash([4, 6]);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // Ear icon label
+        ctx.fillStyle   = `${hearColor}${hearStrokeAlpha * 0.9})`;
+        ctx.font        = '9px monospace';
+        ctx.textAlign   = 'center';
+        ctx.fillText('👂', emx, emy - hearPx - 3);
       }
 
       // ── Cone fill ──────────────────────────────────────────────────────────
