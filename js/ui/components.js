@@ -304,36 +304,56 @@ export function buildGameCanvas() {
     ctx.textAlign   = 'center';
     ctx.fillText('EXIT', ex, ey - 12);
 
-    // ── Enemies: cone FOV + body ──────────────────────────────────────────────
+    // ── Enemies: hearing range + cone FOV + body ──────────────────────────────
+    // Group-based colours for non-alerted watchers:
+    //  group 0 (standard) = orange, group 1 (scout) = yellow, group 2 (guardian) = crimson
+    const GROUP_CONE_BASE  = ['rgba(255,120,0,',  'rgba(255,210,40,', 'rgba(200,50,80,'];
+    const GROUP_BODY_COLOR = ['#ff7700',           '#ffcc00',          '#cc2255'];
+    const REACT_CONE_BASE  = 'rgba(255,180,0,';  // amber while checking a sound
+    const REACT_BODY_COLOR = '#ffaa00';
+
     enemies.forEach(e => {
       const emx        = (e.x / 100) * W;
       const emy        = (e.y / 100) * H;
       const rangePx    = (e.fovRange / 100) * W;
       const halfAngle  = e.fovHalfAngle || (Math.PI / 3.6);
       const facing     = e.facingAngle  || 0;
+      const gid        = (e.groupId != null) ? Math.min(e.groupId, 2) : 0;
+
+      const isSoundReacting = !e.alerted && e.soundReacting;
+      const coneBase = e.alerted ? 'rgba(255,50,50,' : (isSoundReacting ? REACT_CONE_BASE : GROUP_CONE_BASE[gid]);
+      const bodyColor = e.alerted ? '#ff3333' : (isSoundReacting ? REACT_BODY_COLOR : GROUP_BODY_COLOR[gid]);
+
+      // ── Hearing range (faint dashed circle) ───────────────────────────────
+      if (e.hearingRange) {
+        const hearPx = (e.hearingRange / 100) * W;
+        ctx.beginPath();
+        ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
+        ctx.strokeStyle = e.alerted
+          ? 'rgba(255,80,80,0.12)'
+          : (isSoundReacting ? 'rgba(255,180,0,0.18)' : `${coneBase}0.10)`);
+        ctx.lineWidth = 0.7;
+        ctx.setLineDash([2, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       // ── Cone fill ──────────────────────────────────────────────────────────
       const fillAlpha = e.alerted ? 0.18 : 0.08;
-      const fillColor = e.alerted
-        ? `rgba(255,50,50,${fillAlpha})`
-        : `rgba(255,120,0,${fillAlpha})`;
-
       ctx.beginPath();
       ctx.moveTo(emx, emy);
       ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
       ctx.closePath();
-      ctx.fillStyle = fillColor;
+      ctx.fillStyle = `${coneBase}${fillAlpha})`;
       ctx.fill();
 
       // ── Cone outline ───────────────────────────────────────────────────────
-      const ringAlpha = e.alerted ? (0.55 + pulse * 0.3) : 0.40;
+      const ringAlpha = e.alerted ? (0.55 + pulse * 0.3) : (isSoundReacting ? (0.45 + pulse * 0.2) : 0.40);
       ctx.beginPath();
       ctx.moveTo(emx, emy);
       ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
       ctx.closePath();
-      ctx.strokeStyle = e.alerted
-        ? `rgba(255,50,50,${ringAlpha})`
-        : `rgba(255,120,0,${ringAlpha})`;
+      ctx.strokeStyle = `${coneBase}${ringAlpha})`;
       ctx.lineWidth = e.alerted ? 1.5 : 1;
       ctx.stroke();
 
@@ -342,22 +362,27 @@ export function buildGameCanvas() {
       ctx.beginPath();
       ctx.moveTo(emx, emy);
       ctx.lineTo(emx + Math.cos(facing) * arrowLen, emy + Math.sin(facing) * arrowLen);
-      ctx.strokeStyle = e.alerted ? 'rgba(255,80,80,0.9)' : 'rgba(255,160,60,0.8)';
+      ctx.strokeStyle = e.alerted ? 'rgba(255,80,80,0.9)' : (isSoundReacting ? 'rgba(255,180,0,0.9)' : 'rgba(255,160,60,0.8)');
       ctx.lineWidth   = 1.5;
       ctx.stroke();
 
       // ── Enemy body ─────────────────────────────────────────────────────────
       ctx.beginPath();
       ctx.arc(emx, emy, 6, 0, Math.PI * 2);
-      ctx.fillStyle = e.alerted ? '#ff3333' : '#ff7700';
+      ctx.fillStyle = bodyColor;
       ctx.fill();
 
-      // Alert indicator
+      // Alert / sound-reaction indicator
       if (e.alerted) {
         ctx.fillStyle   = '#ff3333';
         ctx.font        = '10px monospace';
         ctx.textAlign   = 'center';
         ctx.fillText('!', emx, emy - 10);
+      } else if (isSoundReacting) {
+        ctx.fillStyle   = '#ffcc44';
+        ctx.font        = '10px monospace';
+        ctx.textAlign   = 'center';
+        ctx.fillText('?', emx, emy - 10);
       }
     });
 
