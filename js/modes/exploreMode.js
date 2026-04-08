@@ -57,7 +57,7 @@ const PLAYER_RADIUS_NOISE_MULT     = 14;
 const PLAYER_RADIUS_LIGHT_MULT     = 8;
 const PLAYER_RADIUS_BRIGHT_MULT    = 6;
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between chase-energy hits
-const ESCAPE_RADIUS         = 6;     // player distance to escape point → win
+const ESCAPE_RADIUS         = 2;     // player distance to escape point → win
 
 // Shadow
 const SHADOW_LIGHT_THRESHOLD= 40;
@@ -731,7 +731,7 @@ function _checkObjectives() {
     if (obj.collected) continue;
     const dx = px - obj.pos.x;
     const dy = py - obj.pos.y;
-    if (Math.sqrt(dx * dx + dy * dy) <= (obj.radius || 6)) {
+    if (Math.sqrt(dx * dx + dy * dy) <= (obj.radius || 2)) {
       obj.collected = true;
       const icon = obj.type === 'key' ? '🔑' : '⚡';
       _pushLog(`${icon} ${obj.label} acquired! Proceed to EXIT.`, 'bonus');

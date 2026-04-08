@@ -168,7 +168,7 @@ export const STAGES = {
     watcherSpawns: [
       // Scout in room 1 — acute hearing
       {
-        x: 17, y: 50, facing: 0, groupId: 1,
+        x: 5, y: 20, facing: 0, groupId: 1,
         patrolPath: [
           { x: 5, y: 20 }, { x: 28, y: 20 },
           { x: 28, y: 80 }, { x: 5, y: 80 },
@@ -210,7 +210,7 @@ export const STAGES = {
 
     // Simple stage objective: collect access key before escaping
     objectives: [
-      { id: 'key', type: 'key', pos: { x: 55, y: 50 }, label: 'Access Key', radius: 6 },
+      { id: 'key', type: 'key', pos: { x: 55, y: 50 }, label: 'Access Key', radius: 2 },
     ],
 
     walls: [
@@ -285,7 +285,7 @@ export const STAGES = {
       },
       // Standard guard pacing the middle-left open lane
       {
-        x: 8, y: 50, facing: Math.PI / 2, groupId: 0,
+        x: 8, y: 70, facing: Math.PI / 2, groupId: 0,
         patrolPath: [
           { x: 8, y: 8 }, { x: 8, y: 90 },
         ],
@@ -310,7 +310,7 @@ export const STAGES = {
 
     // Stage objective: activate the power switch inside the building
     objectives: [
-      { id: 'switch', type: 'switch', pos: { x: 78, y: 50 }, label: 'Power Switch', radius: 6 },
+      { id: 'switch', type: 'switch', pos: { x: 78, y: 50 }, label: 'Power Switch', radius: 2 },
     ],
 
     walls: [
@@ -368,7 +368,7 @@ export const STAGES = {
     watcherSpawns: [
       // Standard guard patrolling outdoor yard
       {
-        x: 28, y: 50, facing: 0, groupId: 0,
+        x: 52, y: 55, facing: 0, groupId: 0,
         patrolPath: [
           { x: 5, y: 55 }, { x: 52, y: 55 },
           { x: 52, y: 30 }, { x: 5, y: 30 },
@@ -408,8 +408,8 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'card',  type: 'key',    pos: { x: 48, y: 22 }, label: 'Access Card',  radius: 6 },
-      { id: 'drive', type: 'switch', pos: { x: 48, y: 78 }, label: 'Data Drive',   radius: 6 },
+      { id: 'card',  type: 'key',    pos: { x: 48, y: 22 }, label: 'Access Card',  radius: 2 },
+      { id: 'drive', type: 'switch', pos: { x: 48, y: 78 }, label: 'Data Drive',   radius: 2 },
     ],
 
     walls: [
@@ -497,7 +497,7 @@ export const STAGES = {
       },
       // Standard guard near spawn, patrolling left aisle
       {
-        x: 20, y: 50, facing: 0, groupId: 0,
+        x: 46, y: 30, facing: 0, groupId: 0,
         patrolPath: [
           { x: 5, y: 30 }, { x: 5, y: 70 },
           { x: 46, y: 70 }, { x: 46, y: 30 },
@@ -522,7 +522,7 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'booster', type: 'key', pos: { x: 50, y: 50 }, label: 'Signal Booster', radius: 6 },
+      { id: 'booster', type: 'key', pos: { x: 50, y: 50 }, label: 'Signal Booster', radius: 2 },
     ],
 
     walls: [
@@ -607,7 +607,7 @@ export const STAGES = {
       },
       // Standard guard on the left half
       {
-        x: 20, y: 50, facing: 0, groupId: 0,
+        x: 36, y: 30, facing: 0, groupId: 0,
         patrolPath: [
           { x: 5, y: 30 }, { x: 36, y: 30 },
           { x: 36, y: 70 }, { x: 5, y: 70 },
@@ -632,8 +632,8 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'keycard', type: 'key',    pos: { x: 30, y: 20 }, label: 'Keycard',       radius: 6 },
-      { id: 'chip',    type: 'switch', pos: { x: 65, y: 78 }, label: 'Security Chip', radius: 6 },
+      { id: 'keycard', type: 'key',    pos: { x: 30, y: 20 }, label: 'Keycard',       radius: 2 },
+      { id: 'chip',    type: 'switch', pos: { x: 65, y: 78 }, label: 'Security Chip', radius: 2 },
     ],
 
     walls: [
@@ -758,7 +758,7 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'master_key', type: 'key', pos: { x: 50, y: 72 }, label: 'Master Key', radius: 6 },
+      { id: 'master_key', type: 'key', pos: { x: 50, y: 72 }, label: 'Master Key', radius: 2 },
     ],
 
     walls: [
@@ -873,8 +873,8 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'evidence', type: 'key',    pos: { x: 30, y: 30 }, label: 'Evidence Cache',    radius: 6 },
-      { id: 'enc_drv',  type: 'switch', pos: { x: 65, y: 72 }, label: 'Encrypted Drive',   radius: 6 },
+      { id: 'evidence', type: 'key',    pos: { x: 30, y: 30 }, label: 'Evidence Cache',    radius: 2 },
+      { id: 'enc_drv',  type: 'switch', pos: { x: 65, y: 72 }, label: 'Encrypted Drive',   radius: 2 },
     ],
 
     walls: [
@@ -949,7 +949,7 @@ export const STAGES = {
       },
       // Standard guard — west half diagonal
       {
-        x: 18, y: 50, facing: 0, groupId: 0,
+        x: 38, y: 30, facing: 0, groupId: 0,
         patrolPath: [
           { x: 5, y: 30 }, { x: 38, y: 30 },
           { x: 38, y: 70 }, { x: 5, y: 70 },
@@ -990,9 +990,9 @@ export const STAGES = {
     escapePoints: [{ x: 92, y: 50 }],
 
     objectives: [
-      { id: 'term_a', type: 'switch', pos: { x: 68, y: 20 }, label: 'Terminal A', radius: 6 },
-      { id: 'term_b', type: 'switch', pos: { x: 68, y: 50 }, label: 'Terminal B', radius: 6 },
-      { id: 'term_c', type: 'switch', pos: { x: 68, y: 80 }, label: 'Terminal C', radius: 6 },
+      { id: 'term_a', type: 'switch', pos: { x: 68, y: 20 }, label: 'Terminal A', radius: 2 },
+      { id: 'term_b', type: 'switch', pos: { x: 68, y: 50 }, label: 'Terminal B', radius: 2 },
+      { id: 'term_c', type: 'switch', pos: { x: 68, y: 80 }, label: 'Terminal C', radius: 2 },
     ],
 
     walls: [

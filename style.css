@@ -478,8 +478,8 @@ html, body {
   margin: 0 auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  width: 420px !important;
-  height: 420px !important;
+  width: 600px !important;
+  height: 600px !important;
   max-width: 100%;
   background: #080810;
 }
