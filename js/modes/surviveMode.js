@@ -19,6 +19,9 @@ import { clamp, randInt, pickRandom } from '../utils.js';
 
 const SAVE_KEY = 'survive_state';
 
+/** Number of actions a player can take per day before Next Day is available. */
+export const ACTIONS_PER_DAY = 3;
+
 // ── Load / Save ───────────────────────────────────────────────────────────────
 
 /** Load saved state from localStorage into the shared `survive` object. */
@@ -31,6 +34,8 @@ export function loadSurvive() {
       typeof e === 'string' ? { msg: e, type: 'info', time: 'D0' } : e,
     );
   }
+  // actionsToday is transient — always reset to 0 on load (new session)
+  saved.actionsToday = 0;
   Object.assign(survive, saved);
 }
 
