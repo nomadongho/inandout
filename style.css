@@ -935,6 +935,10 @@ html, body {
   padding: 8px 10px;
 }
 
+.summary-item-full {
+  grid-column: 1 / -1;
+}
+
 .summary-label {
   font-size: 0.68rem;
   color: var(--text-dim);

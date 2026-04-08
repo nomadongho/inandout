@@ -284,12 +284,12 @@ export function buildExploreScreen() {
   const stageBtnRow = document.createElement('div');
   stageBtnRow.className = 'stage-btn-row';
 
-  STAGE_ORDER.forEach(id => {
+  STAGE_ORDER.forEach((id, idx) => {
     const stageInfo = STAGES[id];
     const btn = document.createElement('button');
     btn.className   = 'stage-btn' + (id === _selectedStageId ? ' stage-btn-active' : '');
     btn.dataset.id  = id;
-    btn.textContent = stageInfo.name;
+    btn.textContent = `${idx + 1}. ${stageInfo.name}`;
     btn.title       = stageInfo.description;
     btn.addEventListener('click', () => {
       _selectedStageId = id;
@@ -518,7 +518,20 @@ function _showRunSummary() {
   const sensor  = s.topSensor  || '—';
   const escaped = s.reason === 'escaped';
 
-  const title = escaped ? '🎉 Escaped!' : 'Run Complete';
+  // Determine next stage when the player has successfully escaped
+  const currentIdx  = STAGE_ORDER.indexOf(exploreRun.stageId);
+  const nextStageId = escaped && currentIdx >= 0 && currentIdx < STAGE_ORDER.length - 1
+    ? STAGE_ORDER[currentIdx + 1]
+    : null;
+  const isLastStage = escaped && currentIdx === STAGE_ORDER.length - 1;
+
+  const stageLabel = nextStageId
+    ? `<div class="summary-item summary-item-full"><div class="summary-label">Next Stage</div><div class="summary-value">${STAGES[nextStageId].name}</div></div>`
+    : isLastStage
+      ? `<div class="summary-item summary-item-full"><div class="summary-label">🏆 All Stages Cleared!</div><div class="summary-value">You are a true ghost.</div></div>`
+      : '';
+
+  const title = escaped ? (isLastStage ? '🏆 All Stages Complete!' : '🎉 Stage Cleared!') : 'Run Complete';
   const body = `
     <div class="run-summary-grid">
       <div class="summary-item">
@@ -537,9 +550,37 @@ function _showRunSummary() {
         <div class="summary-label">${escaped ? 'Top Sensor' : 'Cause of Failure'}</div>
         <div class="summary-value">${escaped ? sensor : cause}</div>
       </div>
+      ${stageLabel}
     </div>
   `;
-  showModal(title, body, 'Back to Home', () => navigate('home'));
+
+  if (nextStageId) {
+    // Show primary "Next Stage" button + secondary "Back to Home" link
+    showModal(title, body, '▶ Next Stage', () => {
+      _selectedStageId = nextStageId;
+      // Update stage selector highlight
+      document.querySelectorAll('.stage-btn').forEach(b => {
+        b.classList.toggle('stage-btn-active', b.dataset.id === nextStageId);
+      });
+      const descEl = document.getElementById('stage-desc');
+      if (descEl) descEl.textContent = STAGES[nextStageId].description;
+      startRun(_onExploreUpdate, nextStageId);
+    });
+    // Append a secondary "Back to Home" button to the modal
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) {
+      const box = overlay.querySelector('.modal-box');
+      if (box) {
+        const homeBtn = buildButton('Back to Home', () => {
+          overlay.remove();
+          navigate('home');
+        }, 'btn-outline');
+        box.appendChild(homeBtn);
+      }
+    }
+  } else {
+    showModal(title, body, 'Back to Home', () => navigate('home'));
+  }
 }
 
 // ── DEBUG PANEL ───────────────────────────────────────────────────────────────
