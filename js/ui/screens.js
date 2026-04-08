@@ -20,9 +20,13 @@ import {
 } from '../modes/surviveMode.js';
 import { formatTime } from '../utils.js';
 import { navigate } from '../nav.js';
+import { STAGE_ORDER, STAGES } from '../explore/stageData.js';
 
 // Cached references to frequently updated elements
 const cache = {};
+
+// Currently selected stage id — persists between runs on the same screen
+let _selectedStageId = STAGE_ORDER[0];
 
 // ── HOME SCREEN ───────────────────────────────────────────────────────────────
 
@@ -267,6 +271,46 @@ export function buildExploreScreen() {
   hud.appendChild(hudLeft);
   hud.appendChild(hudRight);
 
+  // ── Stage selector ────────────────────────────────────────────────────────
+  const stageSel = document.createElement('div');
+  stageSel.className = 'stage-selector';
+  stageSel.id        = 'stage-selector';
+
+  const stageLabel = document.createElement('span');
+  stageLabel.className = 'stage-selector-label';
+  stageLabel.textContent = 'Stage:';
+  stageSel.appendChild(stageLabel);
+
+  const stageBtnRow = document.createElement('div');
+  stageBtnRow.className = 'stage-btn-row';
+
+  STAGE_ORDER.forEach(id => {
+    const stageInfo = STAGES[id];
+    const btn = document.createElement('button');
+    btn.className   = 'stage-btn' + (id === _selectedStageId ? ' stage-btn-active' : '');
+    btn.dataset.id  = id;
+    btn.textContent = stageInfo.name;
+    btn.title       = stageInfo.description;
+    btn.addEventListener('click', () => {
+      _selectedStageId = id;
+      stageBtnRow.querySelectorAll('.stage-btn').forEach(b => {
+        b.classList.toggle('stage-btn-active', b.dataset.id === id);
+      });
+      // Show description
+      const descEl = document.getElementById('stage-desc');
+      if (descEl) descEl.textContent = stageInfo.description;
+    });
+    stageBtnRow.appendChild(btn);
+  });
+
+  stageSel.appendChild(stageBtnRow);
+
+  const stageDesc = document.createElement('div');
+  stageDesc.id        = 'stage-desc';
+  stageDesc.className = 'stage-desc';
+  stageDesc.textContent = STAGES[_selectedStageId].description;
+  stageSel.appendChild(stageDesc);
+
   // ── Danger bar ────────────────────────────────────────────────────────────
   const dangerBar = document.createElement('div');
   dangerBar.className = 'explore-danger-bar';
@@ -292,7 +336,7 @@ export function buildExploreScreen() {
     { key: 'stability',      label: 'Stability',      color: 'meter-cyan',
       info: 'Device tilt & movement. High = steady. Sudden tilt spikes cause a stumble — a noise burst and −5 energy.' },
     { key: 'threatLevel',    label: 'Threat',         color: 'meter-red',
-      info: 'Noise + bright light + low stealth. High = dangerous environment. Enemies spawn faster and detection radius grows.' },
+      info: 'Noise + bright light + low stealth. High = dangerous environment. Detection radius grows.' },
     { key: 'energyModifier', label: 'Efficiency',     color: 'meter-yellow',
       info: 'Battery level + quiet environment + night-time. High = lower passive energy drain and better recovery.' },
   ];
@@ -338,6 +382,7 @@ export function buildExploreScreen() {
   debugPanel.className = 'debug-panel debug-hidden';
 
   wrap.appendChild(hud);
+  wrap.appendChild(stageSel);
   wrap.appendChild(dangerBar);
   wrap.appendChild(meters);
   wrap.appendChild(_gameCanvas.canvas);
@@ -347,8 +392,8 @@ export function buildExploreScreen() {
   wrap.appendChild(debugPanel);
   app.appendChild(wrap);
 
-  // Start the run, hook update callback
-  startRun(_onExploreUpdate);
+  // Start the run on the selected stage
+  startRun(_onExploreUpdate, _selectedStageId);
 
   // rAF loop for smooth canvas redraws (independent of game tick rate)
   _canvasRafId = requestAnimationFrame(_canvasLoop);
@@ -358,15 +403,17 @@ export function buildExploreScreen() {
 function _canvasLoop(timestamp) {
   if (_gameCanvas && exploreRun.active && document.contains(_gameCanvas.canvas)) {
     _gameCanvas.draw({
-      player:               exploreRun.player,
-      enemies:              exploreRun.enemies,
-      escapePoint:          exploreRun.escapePoint,
-      inStealthMode:        exploreRun.inStealthMode,
-      isDetected:           exploreRun.isDetected,
-      shadowCoverage:       exploreRun.shadowCoverage,
-      noiseLevel:           sensorRaw.noiseLevel,
-      ambientLight:         sensorRaw.ambientLight,
+      player:                exploreRun.player,
+      enemies:               exploreRun.enemies,
+      escapePoint:           exploreRun.escapePoint,
+      inStealthMode:         exploreRun.inStealthMode,
+      isDetected:            exploreRun.isDetected,
+      shadowCoverage:        exploreRun.shadowCoverage,
+      noiseLevel:            sensorRaw.noiseLevel,
+      ambientLight:          sensorRaw.ambientLight,
       playerDetectionRadius: exploreRun.playerDetectionRadius,
+      stage:                 exploreRun.stage,
+      soundEvents:           exploreRun.soundEvents,
       timestamp,
     });
   }

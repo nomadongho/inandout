@@ -202,12 +202,13 @@ export function buildSensorRow(id, label, status, valueStr) {
 
 /**
  * Build a full game canvas for Explore mode.
- * Displays: shadow zones, escape beacon, enemy cone FOVs, player exposure radius.
+ * Renders stage walls, shadow/light zones, sound rings, watcher cones
+ * (with 7-state colour coding), player exposure radius, and player.
  *
  * @returns {{ canvas: HTMLCanvasElement, draw: Function }}
  */
 export function buildGameCanvas() {
-  const PULSE_PERIOD_MS = 2400; // full oscillation cycle in milliseconds (~2.4 s gentle pulse)
+  const PULSE_PERIOD_MS = 2400;
 
   const canvas = document.createElement('canvas');
   canvas.className = 'game-canvas';
@@ -217,16 +218,18 @@ export function buildGameCanvas() {
   /**
    * Redraw the game canvas.
    * @param {{
-   *   player:               {x:number, y:number},
-   *   enemies:              Array<{x,y,fovRange,fovHalfAngle,facingAngle,alerted}>,
-   *   escapePoint:          {x:number, y:number},
-   *   inStealthMode:        boolean,
-   *   isDetected:           boolean,
-   *   shadowCoverage:       number,
-   *   noiseLevel:           number,
-   *   ambientLight:         number,
+   *   player:                {x:number, y:number},
+   *   enemies:               Array,
+   *   escapePoint:           {x:number, y:number},
+   *   inStealthMode:         boolean,
+   *   isDetected:            boolean,
+   *   shadowCoverage:        number,
+   *   noiseLevel:            number,
+   *   ambientLight:          number,
    *   playerDetectionRadius: number,
-   *   timestamp:            number,   rAF timestamp for smooth animation
+   *   stage:                 object|null,
+   *   soundEvents:           Array,
+   *   timestamp:             number,
    * }} state
    */
   function draw(state) {
@@ -234,279 +237,282 @@ export function buildGameCanvas() {
       player, enemies, escapePoint,
       inStealthMode, isDetected, shadowCoverage, noiseLevel,
       playerDetectionRadius = 0,
-      timestamp = 0,
+      stage        = null,
+      soundEvents  = [],
+      timestamp    = 0,
     } = state;
 
-    // pulse oscillates 0–1 over PULSE_PERIOD_MS milliseconds (consistent within each frame)
     const pulse = (Math.sin(timestamp * 2 * Math.PI / PULSE_PERIOD_MS) + 1) / 2;
 
     const ctx = canvas.getContext('2d');
     const W   = canvas.width;
     const H   = canvas.height;
 
-    // ── Background ──────────────────────────────────────────────────────────
-    ctx.fillStyle = '#080810';
+    // helper: convert 0–100 grid → canvas px
+    const gx = v => (v / 100) * W;
+    const gy = v => (v / 100) * H;
+    const gw = v => (v / 100) * W;
+    const gh = v => (v / 100) * H;
+
+    // ── Background / floor ─────────────────────────────────────────────────
+    const floorColor = stage ? stage.floorColor : '#080810';
+    ctx.fillStyle = floorColor;
     ctx.fillRect(0, 0, W, H);
 
-    // ── Shadow zones (corners darken when ambient light is low) ─────────────
+    // ── Stage shadow zones (safe hiding spots) ────────────────────────────
+    if (stage && stage.shadowZones) {
+      const shadowColor = stage.shadowZoneColor || 'rgba(0,10,30,0.55)';
+      stage.shadowZones.forEach(z => {
+        ctx.fillStyle = shadowColor;
+        ctx.fillRect(gx(z.x), gy(z.y), gw(z.w), gh(z.h));
+      });
+    }
+
+    // ── Stage light zones (exposed, dangerous areas) ──────────────────────
+    if (stage && stage.lightZones) {
+      const lightColor = stage.lightZoneColor || 'rgba(255,240,180,0.12)';
+      stage.lightZones.forEach(z => {
+        ctx.fillStyle = lightColor;
+        ctx.fillRect(gx(z.x), gy(z.y), gw(z.w), gh(z.h));
+      });
+    }
+
+    // ── Ambient shadow from sensor (corners darken) ───────────────────────
     if (shadowCoverage > 0.1) {
       const corners = [
         { x: 0, y: 0 }, { x: W, y: 0 }, { x: 0, y: H }, { x: W, y: H },
       ];
       corners.forEach(c => {
         const grad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, W * 0.5);
-        grad.addColorStop(0, `rgba(0,0,0,${shadowCoverage * 0.75})`);
+        grad.addColorStop(0, `rgba(0,0,0,${shadowCoverage * 0.65})`);
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, W, H);
       });
-
-      // Subtle blue-teal tint in shadows to indicate safe zones
-      ctx.fillStyle = `rgba(0,40,60,${shadowCoverage * 0.25})`;
-      ctx.fillRect(0, 0, W, H);
     }
 
-    // ── Grid ────────────────────────────────────────────────────────────────
+    // ── Grid ──────────────────────────────────────────────────────────────
     ctx.strokeStyle = '#1a2a1a';
     ctx.lineWidth   = 0.5;
     for (let i = 0; i <= 10; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * W / 10, 0); ctx.lineTo(i * W / 10, H);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(0, i * H / 10); ctx.lineTo(W, i * H / 10);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i * W / 10, 0); ctx.lineTo(i * W / 10, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * H / 10); ctx.lineTo(W, i * H / 10); ctx.stroke();
     }
 
-    // ── Escape beacon ────────────────────────────────────────────────────────
-    const ex      = (escapePoint.x / 100) * W;
-    const ey      = (escapePoint.y / 100) * H;
+    // ── Stage walls ───────────────────────────────────────────────────────
+    if (stage && stage.walls) {
+      const wallColor = stage.wallColor || '#253545';
+      stage.walls.forEach(w => {
+        ctx.fillStyle = wallColor;
+        ctx.fillRect(gx(w.x), gy(w.y), gw(w.w), gh(w.h));
+        // Subtle top/left highlight to give walls depth
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(gx(w.x), gy(w.y), gw(w.w), 1);
+        ctx.fillRect(gx(w.x), gy(w.y), 1, gh(w.h));
+      });
+    }
+
+    // ── Sound propagation rings ───────────────────────────────────────────
+    soundEvents.forEach(ev => {
+      if (!ev || ev.intensity < 2) return;
+      const ageFrac = ev.age / (ev.maxAge || 28);
+      const alpha   = (1 - ageFrac) * 0.35 * Math.min(1, ev.intensity / 40);
+      const radius  = gw(Math.min(50, ev.intensity * 0.55) * (0.3 + ageFrac * 0.7));
+      ctx.beginPath();
+      ctx.arc(gx(ev.x), gy(ev.y), radius, 0, Math.PI * 2);
+      ctx.strokeStyle = ev.type === 'stumble'
+        ? `rgba(255,80,0,${alpha})`
+        : `rgba(255,160,40,${alpha})`;
+      ctx.lineWidth = ev.type === 'stumble' ? 2 : 1;
+      ctx.stroke();
+    });
+
+    // ── Escape beacon ─────────────────────────────────────────────────────
+    const ex = gx(escapePoint.x);
+    const ey = gy(escapePoint.y);
     const beaconR = 8 + pulse * 6;
 
-    // Glow
     const beaconGlow = ctx.createRadialGradient(ex, ey, 0, ex, ey, beaconR * 2.5);
     beaconGlow.addColorStop(0, `rgba(0,255,136,${0.3 + pulse * 0.2})`);
     beaconGlow.addColorStop(1, 'rgba(0,255,136,0)');
     ctx.fillStyle = beaconGlow;
-    ctx.beginPath();
-    ctx.arc(ex, ey, beaconR * 2.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Core dot
-    ctx.beginPath();
-    ctx.arc(ex, ey, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#00ff88';
-    ctx.fill();
-
-    // Label
-    ctx.fillStyle   = '#00ff88';
-    ctx.font        = 'bold 9px monospace';
-    ctx.textAlign   = 'center';
+    ctx.beginPath(); ctx.arc(ex, ey, beaconR * 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#00ff88'; ctx.fill();
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
     ctx.fillText('EXIT', ex, ey - 12);
 
-    // ── Enemies: hearing range + cone FOV + body ──────────────────────────────
-    // Group-based colours for non-alerted watchers:
-    //  group 0 (standard) = orange, group 1 (scout) = yellow, group 2 (guardian) = crimson
-    const GROUP_CONE_BASE  = ['rgba(255,120,0,',  'rgba(255,210,40,', 'rgba(200,50,80,'];
-    const GROUP_BODY_COLOR = ['#ff7700',           '#ffcc00',          '#cc2255'];
-    const REACT_CONE_BASE  = 'rgba(255,180,0,';  // amber while checking a sound
-    const REACT_BODY_COLOR = '#ffaa00';
+    // ── Watchers: hearing circle + FOV cone + body + state icon ──────────
+
+    // Colour tables indexed by watcher state
+    // [coneBase, bodyColor, stateIcon, stateIconColor]
+    const STATE_STYLE = {
+      IDLE:          { cone: 'rgba(255,120,0,',   body: '#ff7700',  icon: '',   ic: '#ff7700' },
+      SUSPICIOUS:    { cone: 'rgba(255,200,60,',  body: '#ffcc00',  icon: '?',  ic: '#ffcc00' },
+      LISTENING:     { cone: 'rgba(0,200,220,',   body: '#00cfff',  icon: '⊙',  ic: '#00cfff' },
+      INVESTIGATING: { cone: 'rgba(255,140,0,',   body: '#ff8c00',  icon: '?!', ic: '#ff8c00' },
+      ALERTED:       { cone: 'rgba(255,60,60,',   body: '#ff3c3c',  icon: '!!', ic: '#ff3c3c' },
+      CHASING:       { cone: 'rgba(255,30,30,',   body: '#ff1e1e',  icon: '⚡', ic: '#ff4444' },
+      RETURNING:     { cone: 'rgba(120,120,160,', body: '#8888aa',  icon: '↩',  ic: '#aaaacc' },
+    };
+    // Override cone base by group for IDLE state
+    const GROUP_CONE_IDLE = ['rgba(255,120,0,', 'rgba(255,210,40,', 'rgba(200,50,80,'];
+    const GROUP_BODY_IDLE = ['#ff7700', '#ffcc00', '#cc2255'];
 
     enemies.forEach(e => {
-      const emx        = (e.x / 100) * W;
-      const emy        = (e.y / 100) * H;
-      const rangePx    = (e.fovRange / 100) * W;
-      const halfAngle  = e.fovHalfAngle || (Math.PI / 3.6);
-      const facing     = e.facingAngle  || 0;
-      const gid        = (e.groupId != null) ? Math.min(e.groupId, 2) : 0;
+      const emx       = gx(e.x);
+      const emy       = gy(e.y);
+      const rangePx   = gw(e.fovRange || 10);
+      const halfAngle = e.fovHalfAngle || (Math.PI / 3.6);
+      const facing    = e.facingAngle || 0;
+      const gid       = Math.min(e.groupId ?? 0, 2);
+      const ws        = e.state || (e.alerted ? 'ALERTED' : (e.soundReacting ? 'SUSPICIOUS' : 'IDLE'));
+      const style     = STATE_STYLE[ws] || STATE_STYLE.IDLE;
 
-      const isSoundReacting = !e.alerted && e.soundReacting;
-      const coneBase = e.alerted ? 'rgba(255,50,50,' : (isSoundReacting ? REACT_CONE_BASE : GROUP_CONE_BASE[gid]);
-      const bodyColor = e.alerted ? '#ff3333' : (isSoundReacting ? REACT_BODY_COLOR : GROUP_BODY_COLOR[gid]);
+      // Apply group colour for IDLE watchers
+      let coneBase = style.cone;
+      let bodyColor = style.body;
+      if (ws === 'IDLE') {
+        coneBase  = GROUP_CONE_IDLE[gid];
+        bodyColor = GROUP_BODY_IDLE[gid];
+      }
 
-      // ── Hearing range circle ──────────────────────────────────────────────
+      // Cone fill/stroke alpha varies by threat level
+      const isHostile  = (ws === 'ALERTED' || ws === 'CHASING');
+      const isSearching = (ws === 'INVESTIGATING');
+      const fillAlpha   = isHostile ? 0.22 : isSearching ? 0.14 : 0.08;
+      const strokeAlpha = isHostile ? (0.6 + pulse * 0.3)
+                        : isSearching ? (0.50 + pulse * 0.2)
+                        : ws === 'SUSPICIOUS' || ws === 'LISTENING' ? (0.45 + pulse * 0.15)
+                        : 0.38;
+
+      // ── Hearing range circle ─────────────────────────────────────────
       if (e.hearingRange) {
-        const hearPx = (e.hearingRange / 100) * W;
+        const hearPx = gw(e.hearingRange);
+        const pdx    = player.x - e.x;
+        const pdy    = player.y - e.y;
+        const inEar  = Math.sqrt(pdx * pdx + pdy * pdy) <= e.hearingRange;
 
-        // Check whether the player is inside this watcher's hearing range
-        const pdx       = player.x - e.x;
-        const pdy       = player.y - e.y;
-        const playerInRange = Math.sqrt(pdx * pdx + pdy * pdy) <= e.hearingRange;
+        let hearFill = 0.04, hearStroke = 0.32, hearLW = 1;
+        if (isHostile)  { hearFill = 0.06; hearStroke = 0.28; }
+        else if (inEar) { hearFill = 0.10 + pulse * 0.06; hearStroke = 0.65 + pulse * 0.2; hearLW = 1.8; }
 
-        // Hearing range uses a distinct blue/teal palette to separate it from
-        // the orange/red FOV cone.  It brightens when the player is inside.
-        let hearFillAlpha, hearStrokeAlpha, hearLineWidth;
-        if (e.alerted) {
-          hearFillAlpha   = 0.06;
-          hearStrokeAlpha = 0.30;
-          hearLineWidth   = 1.2;
-        } else if (playerInRange) {
-          // Player is within earshot — make the zone clearly visible
-          hearFillAlpha   = 0.10 + pulse * 0.06;
-          hearStrokeAlpha = 0.70 + pulse * 0.20;
-          hearLineWidth   = 1.8;
-        } else {
-          hearFillAlpha   = 0.04;
-          hearStrokeAlpha = 0.35;
-          hearLineWidth   = 1.2;
-        }
-
-        const hearColor = e.alerted
-          ? 'rgba(255,80,80,'
-          : (isSoundReacting ? 'rgba(255,200,80,' : 'rgba(60,180,255,');
-
-        // Zone fill
-        ctx.beginPath();
-        ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
-        ctx.fillStyle = `${hearColor}${hearFillAlpha})`;
-        ctx.fill();
-
-        // Zone outline (dashed)
-        ctx.beginPath();
-        ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
-        ctx.strokeStyle = `${hearColor}${hearStrokeAlpha})`;
-        ctx.lineWidth   = hearLineWidth;
-        ctx.setLineDash([4, 6]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Ear icon label
-        ctx.fillStyle   = `${hearColor}${hearStrokeAlpha * 0.9})`;
-        ctx.font        = '9px monospace';
-        ctx.textAlign   = 'center';
+        const hearColor = isHostile ? 'rgba(255,80,80,' : (isSearching ? 'rgba(255,200,80,' : 'rgba(60,180,255,');
+        ctx.beginPath(); ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
+        ctx.fillStyle = `${hearColor}${hearFill})`; ctx.fill();
+        ctx.beginPath(); ctx.arc(emx, emy, hearPx, 0, Math.PI * 2);
+        ctx.strokeStyle = `${hearColor}${hearStroke})`;
+        ctx.lineWidth = hearLW; ctx.setLineDash([4, 6]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = `${hearColor}${hearStroke * 0.9})`;
+        ctx.font = '9px monospace'; ctx.textAlign = 'center';
         ctx.fillText('👂', emx, emy - hearPx - 3);
       }
 
-      // ── Cone fill ──────────────────────────────────────────────────────────
-      const fillAlpha = e.alerted ? 0.18 : 0.08;
+      // ── FOV cone ──────────────────────────────────────────────────────
       ctx.beginPath();
       ctx.moveTo(emx, emy);
       ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
       ctx.closePath();
-      ctx.fillStyle = `${coneBase}${fillAlpha})`;
-      ctx.fill();
+      ctx.fillStyle = `${coneBase}${fillAlpha})`; ctx.fill();
 
-      // ── Cone outline ───────────────────────────────────────────────────────
-      const ringAlpha = e.alerted ? (0.55 + pulse * 0.3) : (isSoundReacting ? (0.45 + pulse * 0.2) : 0.40);
       ctx.beginPath();
       ctx.moveTo(emx, emy);
       ctx.arc(emx, emy, rangePx, facing - halfAngle, facing + halfAngle);
       ctx.closePath();
-      ctx.strokeStyle = `${coneBase}${ringAlpha})`;
-      ctx.lineWidth = e.alerted ? 1.5 : 1;
-      ctx.stroke();
+      ctx.strokeStyle = `${coneBase}${strokeAlpha})`;
+      ctx.lineWidth   = isHostile ? 2 : 1; ctx.stroke();
 
-      // ── Direction arrow (short line in facing direction) ───────────────────
-      const arrowLen = 10;
+      // ── Direction arrow ───────────────────────────────────────────────
       ctx.beginPath();
       ctx.moveTo(emx, emy);
-      ctx.lineTo(emx + Math.cos(facing) * arrowLen, emy + Math.sin(facing) * arrowLen);
-      ctx.strokeStyle = e.alerted ? 'rgba(255,80,80,0.9)' : (isSoundReacting ? 'rgba(255,180,0,0.9)' : 'rgba(255,160,60,0.8)');
-      ctx.lineWidth   = 1.5;
-      ctx.stroke();
+      ctx.lineTo(emx + Math.cos(facing) * 11, emy + Math.sin(facing) * 11);
+      ctx.strokeStyle = `${coneBase}0.9)`;
+      ctx.lineWidth   = 1.5; ctx.stroke();
 
-      // ── Enemy body ─────────────────────────────────────────────────────────
-      ctx.beginPath();
-      ctx.arc(emx, emy, 6, 0, Math.PI * 2);
-      ctx.fillStyle = bodyColor;
-      ctx.fill();
+      // ── Watcher body ──────────────────────────────────────────────────
+      // Pulse size when alerted / chasing
+      const bodyR = isHostile ? (6 + pulse * 1.5) : 6;
+      ctx.beginPath(); ctx.arc(emx, emy, bodyR, 0, Math.PI * 2);
+      ctx.fillStyle = bodyColor; ctx.fill();
 
-      // Alert / sound-reaction indicator
-      if (e.alerted) {
-        ctx.fillStyle   = '#ff3333';
-        ctx.font        = '10px monospace';
-        ctx.textAlign   = 'center';
-        ctx.fillText('!', emx, emy - 10);
-      } else if (isSoundReacting) {
-        ctx.fillStyle   = '#ffcc44';
-        ctx.font        = '10px monospace';
-        ctx.textAlign   = 'center';
-        ctx.fillText('?', emx, emy - 10);
+      // ── State icon above watcher ──────────────────────────────────────
+      if (style.icon) {
+        ctx.fillStyle = style.ic;
+        ctx.font      = isHostile ? 'bold 11px monospace' : 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(style.icon, emx, emy - 11);
+      }
+
+      // ── LISTENING: oscillating scan arcs ─────────────────────────────
+      if (ws === 'LISTENING') {
+        const scanA = facing + Math.sin(timestamp / 600) * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(emx, emy);
+        ctx.arc(emx, emy, rangePx * 0.7, scanA - 0.25, scanA + 0.25);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(0,200,220,${0.18 + pulse * 0.08})`; ctx.fill();
+      }
+
+      // ── INVESTIGATING: arrow toward target ───────────────────────────
+      if (ws === 'INVESTIGATING' && e.investigateTarget) {
+        const itx = gx(e.investigateTarget.x);
+        const ity = gy(e.investigateTarget.y);
+        ctx.beginPath(); ctx.moveTo(emx, emy); ctx.lineTo(itx, ity);
+        ctx.strokeStyle = 'rgba(255,160,0,0.28)'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(itx, ity, 4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,160,0,0.45)'; ctx.lineWidth = 1; ctx.stroke();
       }
     });
 
     // ── Noise pulse around player ─────────────────────────────────────────
+    const px = gx(player.x);
+    const py = gy(player.y);
+
     if (noiseLevel > 25) {
-      const px      = (player.x / 100) * W;
-      const py      = (player.y / 100) * H;
-      const pulseR  = (noiseLevel / 100) * 45;
-      const alpha   = (noiseLevel - 25) / 75 * 0.4;
-      ctx.beginPath();
-      ctx.arc(px, py, pulseR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255,170,0,${alpha})`;
-      ctx.lineWidth   = 2;
-      ctx.stroke();
+      const pulseR = gw((noiseLevel / 100) * 45);
+      const alpha  = (noiseLevel - 25) / 75 * 0.4;
+      ctx.beginPath(); ctx.arc(px, py, pulseR, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,170,0,${alpha})`; ctx.lineWidth = 2; ctx.stroke();
     }
 
-    // ── Player exposure radius (how detectable the player is) ─────────────
-    const px = (player.x / 100) * W;
-    const py = (player.y / 100) * H;
-
+    // ── Player exposure radius ────────────────────────────────────────────
     if (playerDetectionRadius > 0) {
-      const expR    = (playerDetectionRadius / 100) * W;
+      const expR     = gw(playerDetectionRadius);
       const expAlpha = isDetected ? (0.45 + pulse * 0.25) : 0.28;
       const expColor = inStealthMode
         ? `rgba(0,207,255,${expAlpha})`
         : isDetected
           ? `rgba(255,68,68,${expAlpha})`
           : `rgba(255,200,80,${expAlpha * 0.8})`;
-
-      ctx.beginPath();
-      ctx.arc(px, py, expR, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(px, py, expR, 0, Math.PI * 2);
       ctx.strokeStyle = expColor;
       ctx.lineWidth   = isDetected ? 2 : 1;
-      ctx.setLineDash([3, 3]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
     }
 
-    // ── Player ────────────────────────────────────────────────────────────
-
-    // Choose colour based on state
+    // ── Player body ───────────────────────────────────────────────────────
     let pColor, pLabel;
-    if (inStealthMode) {
-      pColor = [0, 207, 255];   // cyan — ghost mode
-      pLabel = 'GHOST';
-    } else if (isDetected) {
-      pColor = [255, 68, 68];   // red — exposed
-      pLabel = 'EXPOSED';
-    } else if (shadowCoverage > 0.4) {
-      pColor = [0, 255, 136];   // green — hidden in shadow
-      pLabel = 'HIDDEN';
-    } else {
-      pColor = [255, 170, 0];   // orange — in the open
-      pLabel = 'CAUTION';
-    }
+    if (inStealthMode)          { pColor = [0, 207, 255]; pLabel = 'GHOST'; }
+    else if (isDetected)        { pColor = [255, 68, 68];  pLabel = 'EXPOSED'; }
+    else if (shadowCoverage > 0.4) { pColor = [0, 255, 136]; pLabel = 'HIDDEN'; }
+    else                        { pColor = [255, 170, 0];  pLabel = 'CAUTION'; }
     const [pr, pg, pb] = pColor;
 
-    // Glow
     const pglow = ctx.createRadialGradient(px, py, 0, px, py, 18);
     pglow.addColorStop(0, `rgba(${pr},${pg},${pb},0.35)`);
     pglow.addColorStop(1, `rgba(${pr},${pg},${pb},0)`);
     ctx.fillStyle = pglow;
-    ctx.beginPath();
-    ctx.arc(px, py, 18, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(px, py, 18, 0, Math.PI * 2); ctx.fill();
 
-    // Body
-    ctx.beginPath();
-    ctx.arc(px, py, 6, 0, Math.PI * 2);
-    ctx.fillStyle = `rgb(${pr},${pg},${pb})`;
-    ctx.fill();
-
-    // State label
-    ctx.fillStyle = `rgb(${pr},${pg},${pb})`;
-    ctx.font      = 'bold 8px monospace';
-    ctx.textAlign = 'center';
+    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${pr},${pg},${pb})`; ctx.fill();
+    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
     ctx.fillText(pLabel, px, py - 12);
 
-    // ── Stealth mode shimmer ring ──────────────────────────────────────────
     if (inStealthMode) {
-      ctx.beginPath();
-      ctx.arc(px, py, 14 + pulse * 6, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0,207,255,${0.4 + pulse * 0.2})`;
-      ctx.lineWidth   = 1.5;
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 14 + pulse * 6, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.4 + pulse * 0.2})`; ctx.lineWidth = 1.5; ctx.stroke();
     }
   }
 
