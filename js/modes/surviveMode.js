@@ -339,8 +339,9 @@ export function actionNextDay() {
 
   survive.day += 1;
 
-  // Difficulty scaling: +1 resource consumed per 10 days survived
-  const dailyConsume = 8 + Math.floor(survive.day / 10);
+  // Difficulty scaling: +1 resource consumed per 10 days survived (kicks in from day 11)
+  const scaling      = Math.floor((survive.day - 1) / 10);
+  const dailyConsume = 8 + scaling;
   survive.resources = clamp(survive.resources - dailyConsume, 0, 100);
 
   // Natural overnight stress reduction
@@ -365,7 +366,7 @@ export function actionNextDay() {
   // Shelter energy passive overnight drain
   survive.shelterEnergy = clamp(survive.shelterEnergy - 5, 0, 100);
 
-  const consumeNote = dailyConsume > 8 ? ` (difficulty ×${Math.floor(survive.day / 10) + 1})` : '';
+  const consumeNote = scaling > 0 ? ` (+${scaling} difficulty)` : '';
   _log(`Day ${survive.day} begins. Resources −${dailyConsume}${consumeNote}. Stress −${stressDecay}.`, 'info');
 
   // Milestone check (before random event, so it reads the new day)
