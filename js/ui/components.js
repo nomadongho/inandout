@@ -229,6 +229,8 @@ export function buildGameCanvas() {
    *   playerDetectionRadius: number,
    *   stage:                 object|null,
    *   soundEvents:           Array,
+   *   objectives:            Array,
+   *   stealthTimerSec:       number,
    *   timestamp:             number,
    * }} state
    */
@@ -237,9 +239,11 @@ export function buildGameCanvas() {
       player, enemies, escapePoint,
       inStealthMode, isDetected, shadowCoverage, noiseLevel,
       playerDetectionRadius = 0,
-      stage        = null,
-      soundEvents  = [],
-      timestamp    = 0,
+      stage           = null,
+      soundEvents     = [],
+      objectives      = [],
+      stealthTimerSec = 0,
+      timestamp       = 0,
     } = state;
 
     const pulse = (Math.sin(timestamp * 2 * Math.PI / PULSE_PERIOD_MS) + 1) / 2;
@@ -312,6 +316,30 @@ export function buildGameCanvas() {
       });
     }
 
+    // ── Stage props (crates, desks, pillars, machines, vehicles) ─────────
+    // Props are distinguishable from structural walls by their type and color
+    const PROP_STYLES = {
+      crate:   { fill: '#5C3A1E', stroke: '#8B5E3C' },
+      desk:    { fill: '#1A2A3A', stroke: '#2E4A62' },
+      machine: { fill: '#162416', stroke: '#2A4A2A' },
+      pillar:  { fill: '#3A3030', stroke: '#605050' },
+      vehicle: { fill: '#1E2A14', stroke: '#3A4A28' },
+    };
+    if (stage && stage.props) {
+      stage.props.forEach(p => {
+        const s = PROP_STYLES[p.type] || PROP_STYLES.crate;
+        ctx.fillStyle = s.fill;
+        ctx.fillRect(gx(p.x), gy(p.y), gw(p.w), gh(p.h));
+        ctx.strokeStyle = s.stroke;
+        ctx.lineWidth   = 1.5;
+        ctx.strokeRect(gx(p.x) + 0.5, gy(p.y) + 0.5, gw(p.w) - 1, gh(p.h) - 1);
+        // Top and left edge highlight for depth
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(gx(p.x), gy(p.y), gw(p.w), 1.5);
+        ctx.fillRect(gx(p.x), gy(p.y), 1.5, gh(p.h));
+      });
+    }
+
     // ── Sound propagation rings ───────────────────────────────────────────
     soundEvents.forEach(ev => {
       if (!ev || ev.intensity < 2) return;
@@ -320,10 +348,13 @@ export function buildGameCanvas() {
       const radius  = gw(Math.min(50, ev.intensity * 0.55) * (0.3 + ageFrac * 0.7));
       ctx.beginPath();
       ctx.arc(gx(ev.x), gy(ev.y), radius, 0, Math.PI * 2);
+      // Footsteps: orange; stumble/burst: bright red-orange; burst: yellow-orange
       ctx.strokeStyle = ev.type === 'stumble'
-        ? `rgba(255,80,0,${alpha})`
-        : `rgba(255,160,40,${alpha})`;
-      ctx.lineWidth = ev.type === 'stumble' ? 2 : 1;
+        ? `rgba(255,60,0,${alpha})`
+        : ev.type === 'burst'
+          ? `rgba(255,220,0,${alpha})`
+          : `rgba(255,160,40,${alpha})`;
+      ctx.lineWidth = (ev.type === 'stumble' || ev.type === 'burst') ? 2 : 1;
       ctx.stroke();
     });
 
@@ -341,6 +372,30 @@ export function buildGameCanvas() {
     ctx.fillStyle = '#00ff88'; ctx.fill();
     ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
     ctx.fillText('EXIT', ex, ey - 12);
+
+    // ── Stage objectives ──────────────────────────────────────────────────
+    objectives.forEach(obj => {
+      if (obj.collected) return;
+      const ox  = gx(obj.pos.x);
+      const oy  = gy(obj.pos.y);
+      const objR = 7 + pulse * 3;
+      // Glow
+      const objGlow = ctx.createRadialGradient(ox, oy, 0, ox, oy, objR * 2.2);
+      objGlow.addColorStop(0, `rgba(255,215,0,${0.25 + pulse * 0.15})`);
+      objGlow.addColorStop(1, 'rgba(255,215,0,0)');
+      ctx.fillStyle = objGlow;
+      ctx.beginPath(); ctx.arc(ox, oy, objR * 2.2, 0, Math.PI * 2); ctx.fill();
+      // Core dot
+      ctx.beginPath(); ctx.arc(ox, oy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; ctx.fill();
+      // Ring
+      ctx.beginPath(); ctx.arc(ox, oy, objR, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,215,0,${0.55 + pulse * 0.25})`; ctx.lineWidth = 1.5; ctx.stroke();
+      // Label
+      ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(obj.label, ox, oy - 13);
+    });
 
     // ── Watchers: hearing circle + FOV cone + body + state icon ──────────
 
@@ -435,22 +490,40 @@ export function buildGameCanvas() {
       ctx.beginPath(); ctx.arc(emx, emy, bodyR, 0, Math.PI * 2);
       ctx.fillStyle = bodyColor; ctx.fill();
 
+      // ── Visual awareness bar (above body) ────────────────────────────
+      const awareness = e.visualAwareness || 0;
+      if (awareness > 3) {
+        const aFrac  = Math.min(1, awareness / 100);
+        const barW   = 20;
+        const barX   = emx - barW / 2;
+        const barY   = emy - 22;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(barX - 1, barY - 1, barW + 2, 5);
+        const hue = Math.round(120 - aFrac * 120); // green → yellow → red
+        ctx.fillStyle = `hsl(${hue},100%,55%)`;
+        ctx.fillRect(barX, barY, barW * aFrac, 4);
+      }
+
       // ── State icon above watcher ──────────────────────────────────────
       if (style.icon) {
         ctx.fillStyle = style.ic;
         ctx.font      = isHostile ? 'bold 11px monospace' : 'bold 10px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(style.icon, emx, emy - 11);
+        ctx.fillText(style.icon, emx, awareness > 3 ? emy - 26 : emy - 11);
       }
 
-      // ── LISTENING: oscillating scan arcs ─────────────────────────────
+      // ── LISTENING: oscillating scan arcs + ear pulse ──────────────────
       if (ws === 'LISTENING') {
+        // Narrow scan arc sweeping the estimated sound direction
         const scanA = facing + Math.sin(timestamp / 600) * 0.6;
         ctx.beginPath();
         ctx.moveTo(emx, emy);
         ctx.arc(emx, emy, rangePx * 0.7, scanA - 0.25, scanA + 0.25);
         ctx.closePath();
         ctx.fillStyle = `rgba(0,200,220,${0.18 + pulse * 0.08})`; ctx.fill();
+        // Subtle "listening" pulse ring
+        ctx.beginPath(); ctx.arc(emx, emy, 10 + pulse * 4, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0,200,220,${0.35 + pulse * 0.2})`; ctx.lineWidth = 1; ctx.stroke();
       }
 
       // ── INVESTIGATING: arrow toward target ───────────────────────────
@@ -511,8 +584,19 @@ export function buildGameCanvas() {
     ctx.fillText(pLabel, px, py - 12);
 
     if (inStealthMode) {
-      ctx.beginPath(); ctx.arc(px, py, 14 + pulse * 6, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0,207,255,${0.4 + pulse * 0.2})`; ctx.lineWidth = 1.5; ctx.stroke();
+      // Outer pulse ring
+      ctx.beginPath(); ctx.arc(px, py, 20 + pulse * 6, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.22 + pulse * 0.15})`; ctx.lineWidth = 1; ctx.stroke();
+      // Inner solid ring
+      ctx.beginPath(); ctx.arc(px, py, 10 + pulse * 3, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.55 + pulse * 0.25})`; ctx.lineWidth = 2; ctx.stroke();
+    } else if (stealthTimerSec > 0.3) {
+      // Stealth building indicator — arc grows from 0 to full circle as silence accumulates
+      const progress = Math.min(1, stealthTimerSec / 3.0);
+      ctx.beginPath();
+      ctx.arc(px, py, 12, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,207,255,${0.3 + progress * 0.35})`;
+      ctx.lineWidth = 2; ctx.stroke();
     }
   }
 

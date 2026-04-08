@@ -22,7 +22,7 @@ export const STAGES = {
     id:          'corridor',
     name:        'Security Corridor',
     indoor:      true,
-    description: 'Narrow indoor corridors. Sound carries far. Stay silent to slip past watchers.',
+    description: 'Narrow indoor corridors. Sound carries far and echoes. Stay silent — guards hear everything.',
     floorColor:      '#0d1420',
     wallColor:       '#253545',
     shadowZoneColor: 'rgba(0,10,30,0.55)',
@@ -43,9 +43,19 @@ export const STAGES = {
       // Lower horizontal divider  (door gap x = 43–57)
       { x: 3,  y: 63, w: 40,  h: 3   },
       { x: 57, y: 63, w: 40,  h: 3   },
-      // Cover crates in middle corridor
-      { x: 18, y: 44, w: 5,   h: 6   },
-      { x: 75, y: 44, w: 5,   h: 6   },
+    ],
+
+    // Cover objects — block vision and movement, attenuate sound
+    props: [
+      { x: 18, y: 44, w: 5, h: 6, type: 'crate'   },
+      { x: 75, y: 44, w: 5, h: 6, type: 'crate'   },
+      // Desks in the top and bottom rooms
+      { x: 14, y: 8,  w: 6, h: 4, type: 'desk'    },
+      { x: 72, y: 8,  w: 6, h: 4, type: 'desk'    },
+      { x: 14, y: 86, w: 6, h: 4, type: 'desk'    },
+      { x: 72, y: 86, w: 6, h: 4, type: 'desk'    },
+      // Filing cabinet cluster in top room corner
+      { x: 80, y: 23, w: 4, h: 8, type: 'machine' },
     ],
 
     shadowZones: [
@@ -91,7 +101,7 @@ export const STAGES = {
     id:          'rooms',
     name:        'Research Facility',
     indoor:      true,
-    description: 'Navigate three connected chambers. Each room has its own guard.',
+    description: 'Three connected chambers. Sound echoes between rooms. Guards react to repeated noise.',
     floorColor:      '#0d1218',
     wallColor:       '#1e2a40',
     shadowZoneColor: 'rgba(0,5,20,0.60)',
@@ -112,16 +122,25 @@ export const STAGES = {
       // Right room divider at x = 64 (door gap y = 44–56)
       { x: 64, y: 3,  w: 3,   h: 41  },
       { x: 64, y: 56, w: 3,   h: 41  },
-      // Cover objects inside each room
-      { x: 8,  y: 14, w: 5,   h: 5   },
-      { x: 8,  y: 78, w: 5,   h: 5   },
-      { x: 22, y: 46, w: 5,   h: 5   },
-      { x: 41, y: 11, w: 5,   h: 5   },
-      { x: 41, y: 80, w: 5,   h: 5   },
-      { x: 48, y: 46, w: 5,   h: 5   },
-      { x: 74, y: 14, w: 5,   h: 5   },
-      { x: 74, y: 78, w: 5,   h: 5   },
-      { x: 81, y: 46, w: 5,   h: 5   },
+    ],
+
+    // Cover props in each room
+    props: [
+      // Room 1 (left)
+      { x: 8,  y: 14, w: 5, h: 5, type: 'desk'    },
+      { x: 8,  y: 78, w: 5, h: 5, type: 'desk'    },
+      { x: 22, y: 46, w: 5, h: 5, type: 'crate'   },
+      // Room 2 (middle)
+      { x: 41, y: 11, w: 5, h: 5, type: 'machine' },
+      { x: 41, y: 80, w: 5, h: 5, type: 'machine' },
+      { x: 48, y: 46, w: 5, h: 5, type: 'crate'   },
+      // Room 3 (right)
+      { x: 74, y: 14, w: 5, h: 5, type: 'desk'    },
+      { x: 74, y: 78, w: 5, h: 5, type: 'desk'    },
+      { x: 81, y: 46, w: 5, h: 5, type: 'crate'   },
+      // Pillars near doorways
+      { x: 29, y: 42, w: 3, h: 3, type: 'pillar'  },
+      { x: 62, y: 42, w: 3, h: 3, type: 'pillar'  },
     ],
 
     shadowZones: [
@@ -177,7 +196,7 @@ export const STAGES = {
     id:          'courtyard',
     name:        'Open Courtyard',
     indoor:      false,
-    description: 'Exposed outdoor area. Sound fades fast. Use scattered cover to avoid watchers.',
+    description: 'Exposed outdoor area. Long sightlines, bright light. Collect the access key before reaching the exit.',
     floorColor:      '#0c1008',
     wallColor:       '#1e2812',
     shadowZoneColor: 'rgba(0,20,5,0.50)',
@@ -186,25 +205,36 @@ export const STAGES = {
     playerSpawn:  { x: 8,  y: 50 },
     escapePoints: [{ x: 91, y: 50 }],
 
+    // Simple stage objective: collect access key before escaping
+    objectives: [
+      { id: 'key', type: 'key', pos: { x: 55, y: 50 }, label: 'Access Key', radius: 6 },
+    ],
+
     walls: [
       // Outer border
       { x: 0,  y: 0,  w: 100, h: 3   },
       { x: 0,  y: 97, w: 100, h: 3   },
       { x: 0,  y: 0,  w: 3,   h: 100 },
       { x: 97, y: 0,  w: 3,   h: 100 },
-      // Scatter of cover crates (8×8)
-      { x: 18, y: 18, w: 8,   h: 8   },
-      { x: 44, y: 14, w: 8,   h: 8   },
-      { x: 70, y: 18, w: 8,   h: 8   },
-      { x: 14, y: 44, w: 8,   h: 8   },
-      { x: 44, y: 44, w: 8,   h: 8   },
-      { x: 78, y: 44, w: 8,   h: 8   },
-      { x: 18, y: 70, w: 8,   h: 8   },
-      { x: 44, y: 74, w: 8,   h: 8   },
-      { x: 70, y: 70, w: 8,   h: 8   },
-      // Partial broken-wall barriers
+      // Partial broken-wall barriers (structural, vision-blocking)
       { x: 35, y: 28, w: 3,   h: 20  },
       { x: 62, y: 52, w: 3,   h: 20  },
+    ],
+
+    // Cover crates scattered across the courtyard
+    props: [
+      { x: 18, y: 18, w: 8, h: 8, type: 'crate'   },
+      { x: 44, y: 14, w: 8, h: 8, type: 'crate'   },
+      { x: 70, y: 18, w: 8, h: 8, type: 'crate'   },
+      { x: 14, y: 44, w: 8, h: 8, type: 'crate'   },
+      { x: 44, y: 44, w: 8, h: 8, type: 'crate'   },
+      { x: 78, y: 44, w: 8, h: 8, type: 'crate'   },
+      { x: 18, y: 70, w: 8, h: 8, type: 'crate'   },
+      { x: 44, y: 74, w: 8, h: 8, type: 'crate'   },
+      { x: 70, y: 70, w: 8, h: 8, type: 'crate'   },
+      // Abandoned vehicles providing heavier cover
+      { x: 58, y: 14, w: 10, h: 6, type: 'vehicle' },
+      { x: 22, y: 78, w: 10, h: 6, type: 'vehicle' },
     ],
 
     shadowZones: [
@@ -221,6 +251,9 @@ export const STAGES = {
       // Behind barriers
       { x: 30, y: 26, w: 10, h: 24 },
       { x: 58, y: 50, w: 10, h: 24 },
+      // Behind vehicles
+      { x: 56, y: 12, w: 14, h: 10 },
+      { x: 20, y: 76, w: 14, h: 10 },
     ],
 
     lightZones: [
@@ -228,17 +261,19 @@ export const STAGES = {
       { x: 3,  y: 30, w: 10, h: 40 },
       // Right open lane (exit side)
       { x: 87, y: 30, w: 10, h: 40 },
+      // Central exposed area — dangerous in daylight
+      { x: 38, y: 38, w: 24, h: 24 },
     ],
 
     watcherSpawns: [
-      // Guardian sweeping the top edge
+      // Guardian sweeping the top edge — wide FOV, outdoor vantage
       {
         x: 50, y: 8, facing: Math.PI / 2, groupId: 2,
         patrolPath: [
           { x: 8, y: 8 }, { x: 90, y: 8 },
         ],
       },
-      // Scout patrolling the bottom edge
+      // Scout patrolling the bottom edge — acute hearing
       {
         x: 50, y: 90, facing: -Math.PI / 2, groupId: 1,
         patrolPath: [
@@ -260,7 +295,7 @@ export const STAGES = {
     id:          'compound',
     name:        'Secure Compound',
     indoor:      false,
-    description: 'Cross the outdoor yard, enter the building, and reach the secure exit.',
+    description: 'Cross the yard, enter the building, activate the power switch, then reach the secure exit.',
     floorColor:      '#0c1008',
     wallColor:       '#1e2812',
     shadowZoneColor: 'rgba(0,15,5,0.55)',
@@ -268,6 +303,11 @@ export const STAGES = {
 
     playerSpawn:  { x: 8,  y: 50 },
     escapePoints: [{ x: 91, y: 50 }],
+
+    // Stage objective: activate the power switch inside the building
+    objectives: [
+      { id: 'switch', type: 'switch', pos: { x: 78, y: 50 }, label: 'Power Switch', radius: 6 },
+    ],
 
     walls: [
       // Outer border
@@ -283,14 +323,23 @@ export const STAGES = {
       { x: 88, y: 35, w: 9,   h: 3   },
       { x: 58, y: 63, w: 18,  h: 3   },
       { x: 88, y: 63, w: 9,   h: 3   },
-      // Outdoor obstacles
-      { x: 14, y: 14, w: 8,   h: 8   },
-      { x: 35, y: 8,  w: 8,   h: 8   },
-      { x: 14, y: 76, w: 8,   h: 8   },
-      { x: 35, y: 78, w: 8,   h: 8   },
-      { x: 42, y: 44, w: 6,   h: 8   },
       // Outdoor fence / partial wall
       { x: 28, y: 34, w: 3,   h: 28  },
+    ],
+
+    // Outdoor cover objects and indoor machines
+    props: [
+      // Outdoor yard
+      { x: 14, y: 14, w: 8, h: 8, type: 'crate'   },
+      { x: 35, y: 8,  w: 8, h: 8, type: 'crate'   },
+      { x: 14, y: 76, w: 8, h: 8, type: 'crate'   },
+      { x: 35, y: 78, w: 8, h: 8, type: 'crate'   },
+      { x: 42, y: 44, w: 6, h: 8, type: 'machine' },
+      // Indoor building
+      { x: 60, y: 38, w: 6, h: 5, type: 'desk'    },
+      { x: 60, y: 55, w: 6, h: 5, type: 'desk'    },
+      { x: 88, y: 38, w: 6, h: 5, type: 'machine' },
+      { x: 88, y: 55, w: 6, h: 5, type: 'machine' },
     ],
 
     shadowZones: [
