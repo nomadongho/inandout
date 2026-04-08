@@ -339,7 +339,6 @@ export function buildGameCanvas() {
     ctx.beginPath(); ctx.arc(ex, ey, beaconR * 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2);
     ctx.fillStyle = '#00ff88'; ctx.fill();
-    ctx.fillStyle = '#00ff88';
     ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
     ctx.fillText('EXIT', ex, ey - 12);
 
@@ -508,8 +507,6 @@ export function buildGameCanvas() {
 
     ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2);
     ctx.fillStyle = `rgb(${pr},${pg},${pb})`; ctx.fill();
-
-    ctx.fillStyle = `rgb(${pr},${pg},${pb})`;
     ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
     ctx.fillText(pLabel, px, py - 12);
 
