@@ -43,7 +43,7 @@ export const exploreRun = {
   energy:         100,
   danger:         0,       // 0–100 danger pressure meter
   log:            [],      // {msg, type, time}[]
-  enemies:        [],      // enemy objects with detection radii
+  enemies:        [],      // watcher objects (Watcher from watcherAI.js)
   summary:        null,    // populated on endRun
   // Real-time gameplay state
   player:         { x: 50, y: 50 }, // grid position 0–100
@@ -54,6 +54,10 @@ export const exploreRun = {
   isDetected:           false,       // true this tick if an enemy spotted player
   stealthTimerSec:      0,           // seconds of consecutive silence
   playerDetectionRadius: 0,          // 0–30 grid units: current player exposure size
+  // Stage-based fields
+  stage:        null,      // loaded stage definition object
+  stageId:      'corridor', // id of the current stage
+  soundEvents:  [],        // active SoundEvent[] from soundSystem.js
 };
 
 /**
@@ -96,6 +100,9 @@ export function resetExploreRun() {
   exploreRun.isDetected         = false;
   exploreRun.stealthTimerSec    = 0;
   exploreRun.playerDetectionRadius = 0;
+  exploreRun.stage              = null;
+  exploreRun.stageId            = 'corridor';
+  exploreRun.soundEvents        = [];
 }
 
 /** Reset survive state to fresh values (new game). */
