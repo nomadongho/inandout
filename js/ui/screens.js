@@ -286,7 +286,7 @@ export function buildExploreScreen() {
     { key: 'visibility',     label: 'Visibility',     color: 'meter-blue',
       info: 'Ambient light + screen brightness + time of day. High = brighter environment — better sight but more exposed.' },
     { key: 'stealth',        label: 'Stealth',        color: 'meter-green',
-      info: 'Quiet + still + dark = high stealth. Stay silent (noise < 18) for 3 s to enter GHOST mode — enemies\' detection radius shrinks to 35%.' },
+      info: 'Quiet + still + dark = high stealth. Stay silent (noise < 18) for 3 s to enter GHOST mode — enemy detection radius shrinks to 35%.' },
     { key: 'exposure',       label: 'Exposure',       color: 'meter-orange',
       info: 'Noise + ambient light + daytime. High = you are visible to enemies. Pushes up the Danger meter and raises detection risk.' },
     { key: 'stability',      label: 'Stability',      color: 'meter-cyan',
@@ -584,7 +584,8 @@ function _updateDebugPanel(panelId, mode) {
   `;
 }
 
-// ── SURVIVE SCREEN ────────────────────────────────────────────────────────────
+// How often (ms) to refresh the survive environment summary + action hints.
+const SURVIVE_UPDATE_INTERVAL_MS = 2000;
 
 export function buildSurviveScreen() {
   const app = document.getElementById('app');
@@ -675,7 +676,7 @@ export function buildSurviveScreen() {
     const barEl = document.getElementById('survive-action-bar');
     if (barEl) _buildSurviveActionBar(barEl);
     _updateDebugPanel('survive-debug', 'survive');
-  }, 2000);
+  }, SURVIVE_UPDATE_INTERVAL_MS);
 }
 
 export function teardownSurviveScreen() {

@@ -17,6 +17,11 @@ import { clamp } from '../utils.js';
 
 // ─── Microphone / Noise ──────────────────────────────────────────────────────
 
+// FFT bin average normalization cap — the average of all frequency bins
+// typically peaks around this value (0–255 scale) during typical speech/noise.
+// Using this instead of 255 gives a ~3× more responsive noise reading.
+const NOISE_NORMALIZATION_CAP = 80;
+
 // Number of animation-frame samples averaged to smooth out mic noise.
 // Higher = smoother but more lag; 8 frames ≈ 133 ms at 60 fps.
 const MIC_RING_SIZE = 8;
@@ -115,10 +120,10 @@ export const micReader = {
     const smoothedAvg = this._ring.reduce((s, v) => s + v, 0) / this._ring.length;
 
     // Normalise from 0–255 to 0–100 with amplification:
-    // The raw FFT bin average clusters in 0–80 for typical speech/noise,
-    // so we normalise against 80 (rather than 255) for a more responsive reading.
-    // Values above 80 average are capped at 100.
-    this.value = clamp(Math.round((smoothedAvg / 80) * 100), 0, 100);
+    // The raw FFT bin average clusters in 0–NOISE_NORMALIZATION_CAP for typical
+    // speech/noise, so we normalise against that cap (rather than 255) for a
+    // more responsive reading. Values above the cap are clamped to 100.
+    this.value = clamp(Math.round((smoothedAvg / NOISE_NORMALIZATION_CAP) * 100), 0, 100);
 
     this._rafId = requestAnimationFrame(() => this._poll());
   },
