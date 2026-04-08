@@ -52,7 +52,14 @@ const NOISE_THRESHOLD       = 28;    // noise level that alerts nearby enemies
 const SILENCE_STEALTH_SECS  = 3.0;   // s of quiet → stealth mode
 const STEALTH_BREAK_NOISE   = 18;    // noise above this breaks stealth mode
 const UN_ALERT_NOISE        = 10;    // enemy un-alerts when noise drops below this
-const ENEMY_BASE_DETECT_R   = 18;    // base detection radius (0–100 grid units)
+const ENEMY_BASE_DETECT_R          = 22;    // base FOV range for enemies (0–100 grid units)
+const ENEMY_FOV_HALF_ANGLE         = Math.PI / 3.6; // ≈50° half-angle → ~100° total cone
+const PLAYER_BASE_DETECT_R         = 4;     // base player exposure radius (grid units)
+const PLAYER_RADIUS_NOISE_MULT     = 14;    // noise contribution to player exposure radius
+const PLAYER_RADIUS_LIGHT_MULT     = 8;     // ambient light contribution
+const PLAYER_RADIUS_BRIGHT_MULT    = 6;     // screen brightness contribution
+const MIN_DETECTION_DIST           = 0.01;  // minimum enemy-player distance to avoid division by zero
+const DEFAULT_ANGULAR_EXPANSION    = Math.PI; // angular expansion used when enemy is on top of player
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between detection energy hits
 const NOISE_EVENT_COOLDOWN  = 20;    // ticks before another noise event
 const ENEMY_ALERT_MAX_TICKS = 60;    // auto-cancel alert after ~6 s if not re-triggered
@@ -235,15 +242,17 @@ function spawnEnemy() {
     default: ex = 5;               ey = randFloat(5, 95); break;
   }
   return {
-    id:              _enemyId++,
-    x:               ex,
-    y:               ey,
-    speed:           randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100),
-    detectionRadius: ENEMY_BASE_DETECT_R, // updated each tick
-    alerted:         false,
-    alertTicks:      0,   // counts down; resets on re-trigger
-    patrolAngle:     randFloat(0, Math.PI * 2),
-    patrolSpeed:     randFloat(0.5, 1.5),
+    id:           _enemyId++,
+    x:            ex,
+    y:            ey,
+    speed:        randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100),
+    fovRange:     ENEMY_BASE_DETECT_R, // updated each tick; was detectionRadius
+    fovHalfAngle: ENEMY_FOV_HALF_ANGLE,
+    alerted:      false,
+    alertTicks:   0,   // counts down; resets on re-trigger
+    patrolAngle:  randFloat(0, Math.PI * 2),
+    patrolSpeed:  randFloat(0.5, 1.5),
+    facingAngle:  randFloat(0, Math.PI * 2), // direction the enemy is facing
   };
 }
 
@@ -570,11 +579,11 @@ function _updateEnemyDetectionRadii() {
   const brightFactor = 1 + sensorRaw.brightnessLevel / 200;  // 1.0–1.5
   const shadowFactor = 1 - exploreRun.shadowCoverage * 0.55; // 0.45–1.0
   const stealthFactor = exploreRun.inStealthMode ? 0.35 : 1.0;
-  const radius = clamp(
+  const range = clamp(
     ENEMY_BASE_DETECT_R * lightFactor * brightFactor * shadowFactor * stealthFactor,
     4, 55,
   );
-  exploreRun.enemies.forEach(e => { e.detectionRadius = radius; });
+  exploreRun.enemies.forEach(e => { e.fovRange = range; });
 }
 
 // ── Enemy spawn ───────────────────────────────────────────────────────────────
@@ -604,7 +613,8 @@ function _updateEnemies() {
     const speed = e.speed * nightSpeed * (1 + derived.exposure / 200);
 
     if (e.alerted) {
-      // Alerted: home in on player directly
+      // Alerted: home in on player directly; face toward player
+      e.facingAngle = Math.atan2(dy, dx);
       e.x += (dx / dist) * speed;
       e.y += (dy / dist) * speed;
 
@@ -621,8 +631,14 @@ function _updateEnemies() {
       const patrolDy = Math.sin(e.patrolAngle * PATROL_Y_FREQ) * speed * PATROL_SPEED_FRAC;
       const homingDx = (dx / dist) * speed * PATROL_HOMING_FRAC;
       const homingDy = (dy / dist) * speed * PATROL_HOMING_FRAC;
-      e.x = clamp(e.x + patrolDx + homingDx, 1, 99);
-      e.y = clamp(e.y + patrolDy + homingDy, 1, 99);
+      const totalDx  = patrolDx + homingDx;
+      const totalDy  = patrolDy + homingDy;
+      // Face in the direction of actual movement
+      if (Math.abs(totalDx) > 0.001 || Math.abs(totalDy) > 0.001) {
+        e.facingAngle = Math.atan2(totalDy, totalDx);
+      }
+      e.x = clamp(e.x + totalDx, 1, 99);
+      e.y = clamp(e.y + totalDy, 1, 99);
     }
 
     // Catch check — uses module-level ENEMY_CATCH_DIST
@@ -640,20 +656,71 @@ function _updateEnemies() {
 
 // ── Enemy detection check ─────────────────────────────────────────────────────
 
+/**
+ * Normalise the signed difference between two angles to the range [-π, π].
+ * @param {number} a - first angle in radians
+ * @param {number} b - second angle in radians
+ * @returns {number} signed difference in [-π, π]
+ */
+function _angleDiff(a, b) {
+  let d = a - b;
+  while (d >  Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
+/**
+ * Compute how large the player's "detectable presence" circle is this tick.
+ * Factors: noise (louder = bigger), ambient light, screen brightness,
+ * shadow coverage (darker = smaller), stealth mode (nearly invisible).
+ */
+function _computePlayerDetectionRadius() {
+  const noise      = sensorRaw.noiseLevel;
+  const light      = sensorRaw.ambientLight;
+  const brightness = sensorRaw.brightnessLevel;
+
+  let r = PLAYER_BASE_DETECT_R;
+  r += (noise      / 100) * PLAYER_RADIUS_NOISE_MULT;  // loud noise greatly expands presence
+  r += (light      / 100) * PLAYER_RADIUS_LIGHT_MULT;  // bright environment makes you more visible
+  r += (brightness / 100) * PLAYER_RADIUS_BRIGHT_MULT; // bright screen leaks light, revealing you
+  r *= (1 - exploreRun.shadowCoverage * 0.65); // shadows shrink the radius
+  if (exploreRun.inStealthMode) r *= 0.2;       // ghost mode: almost invisible
+
+  return clamp(r, 1, 30);
+}
+
 function _checkEnemyDetections() {
   if (_detectionCooldown > 0) {
     exploreRun.isDetected = false;
     return;
   }
-  const pX = exploreRun.player.x;
-  const pY = exploreRun.player.y;
+  const pX      = exploreRun.player.x;
+  const pY      = exploreRun.player.y;
+  const playerR = _computePlayerDetectionRadius();
+  exploreRun.playerDetectionRadius = playerR;
+
   let detectedByAny = false;
 
   exploreRun.enemies.forEach(e => {
     const dx   = pX - e.x;
     const dy   = pY - e.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < e.detectionRadius) {
+
+    // Nearest edge of player's exposure circle to enemy
+    const effectiveDist = dist - playerR;
+    if (effectiveDist >= e.fovRange) return; // too far even accounting for player radius
+
+    // Angle from enemy to player centre
+    const angleToPlayer = Math.atan2(dy, dx);
+    const angleDiff     = Math.abs(_angleDiff(angleToPlayer, e.facingAngle));
+
+    // Expand the cone half-angle by the angular size of the player's exposure radius
+    // so that even if the player is slightly outside the centre line, their circle overlaps.
+    const angularExpansion = dist > MIN_DETECTION_DIST
+      ? Math.asin(Math.min(1, playerR / dist))
+      : DEFAULT_ANGULAR_EXPANSION;
+
+    if (angleDiff <= e.fovHalfAngle + angularExpansion) {
       detectedByAny = true;
       e.alerted     = true;
       e.alertTicks  = ENEMY_ALERT_MAX_TICKS; // refresh alert timer on each detection
