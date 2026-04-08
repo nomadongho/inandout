@@ -13,9 +13,10 @@
  * @param {string} label
  * @param {number} value  0–100
  * @param {string} [colorClass]  CSS class for fill colour
+ * @param {string|null} [info]   Optional description shown on ? button tap
  * @returns {HTMLElement}
  */
-export function buildMeter(label, value, colorClass = 'meter-default') {
+export function buildMeter(label, value, colorClass = 'meter-default', info = null) {
   const wrap  = document.createElement('div');
   wrap.className = 'meter-wrap';
 
@@ -30,7 +31,25 @@ export function buildMeter(label, value, colorClass = 'meter-default') {
   val.className   = 'meter-value';
   val.textContent = `${Math.round(value)}%`;
 
-  header.appendChild(lbl);
+  // Left side: label + optional info button
+  const labelGroup = document.createElement('span');
+  labelGroup.style.display = 'flex';
+  labelGroup.style.alignItems = 'center';
+  labelGroup.appendChild(lbl);
+
+  if (info) {
+    const infoBtn = document.createElement('button');
+    infoBtn.className   = 'meter-info-btn';
+    infoBtn.textContent = '?';
+    infoBtn.title       = info;
+    infoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showModal(label, `<p>${info}</p>`, 'OK', null);
+    });
+    labelGroup.appendChild(infoBtn);
+  }
+
+  header.appendChild(labelGroup);
   header.appendChild(val);
 
   const track = document.createElement('div');

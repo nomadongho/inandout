@@ -835,6 +835,79 @@ html, body {
   font-weight: 700;
 }
 
+/* ── Meter info button (?)\───────────────────────────────── */
+.meter-info-btn {
+  background: none;
+  border: 1px solid var(--text-dim);
+  color: var(--text-dim);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  transition: border-color 0.2s, color 0.2s;
+}
+.meter-info-btn:hover,
+.meter-info-btn:focus {
+  border-color: var(--accent2);
+  color: var(--accent2);
+  outline: none;
+}
+
+/* ── Debug panel ─────────────────────────────────────────── */
+.debug-toggle-btn {
+  font-size: 0.7rem;
+  min-height: 28px;
+  padding: 3px 10px;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+}
+.debug-toggle-btn:hover { opacity: 1; }
+
+.debug-panel {
+  background: rgba(8, 8, 16, 0.96);
+  border: 1px solid var(--accent2);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+.debug-panel.debug-hidden { display: none; }
+
+.debug-section-title {
+  font-size: 0.65rem;
+  color: var(--accent2);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 2px;
+  margin-top: 6px;
+}
+.debug-section-title:first-child { margin-top: 0; }
+
+.debug-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(30,58,30,0.4);
+  padding: 1px 0;
+}
+.debug-row:last-child { border-bottom: none; }
+
+.debug-key   { color: var(--text-dim); }
+.debug-val   { color: var(--text-head); font-weight: 700; font-family: monospace; }
+.debug-val.ok     { color: var(--accent);  }
+.debug-val.warn   { color: var(--warn);    }
+.debug-val.bad    { color: var(--danger);  }
+.debug-val.active { color: var(--accent2); }
+
 /* ── Accessibility: reduced motion ───────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   /* Disable all pulsing / flashing animations for users who prefer
