@@ -382,7 +382,7 @@ export function actionRecharge() {
 export function actionNextDay() {
   // Require at least one action before the day can end
   if (survive.actionsToday === 0) {
-    _log('⛔ You haven\'t done anything today — take at least one action first.', 'warn');
+    _log("⛔ You haven't done anything today — take at least one action first.", 'warn');
     saveSurvive();
     return;
   }
