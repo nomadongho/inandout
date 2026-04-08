@@ -52,8 +52,6 @@ const NOISE_THRESHOLD       = 28;    // noise level that alerts nearby enemies
 const SILENCE_STEALTH_SECS  = 3.0;   // s of quiet → stealth mode
 const STEALTH_BREAK_NOISE   = 18;    // noise above this breaks stealth mode
 const UN_ALERT_NOISE        = 10;    // enemy un-alerts when noise drops below this
-const ENEMY_BASE_DETECT_R          = 22;    // base FOV range for enemies (0–100 grid units)
-const ENEMY_FOV_HALF_ANGLE         = Math.PI / 3.6; // ≈50° half-angle → ~100° total cone
 const PLAYER_BASE_DETECT_R         = 4;     // base player exposure radius (grid units)
 const PLAYER_RADIUS_NOISE_MULT     = 14;    // noise contribution to player exposure radius
 const PLAYER_RADIUS_LIGHT_MULT     = 8;     // ambient light contribution
@@ -63,6 +61,24 @@ const DEFAULT_ANGULAR_EXPANSION    = Math.PI; // angular expansion used when ene
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between detection energy hits
 const NOISE_EVENT_COOLDOWN  = 20;    // ticks before another noise event
 const ENEMY_ALERT_MAX_TICKS = 60;    // auto-cancel alert after ~6 s if not re-triggered
+
+// Enemy groups — three distinct watcher profiles with different FOV and hearing stats.
+// FOV range is in 0–100 grid units; hearingRange is the radius within which a watcher
+// will react to sound.  The player's state (stealth, brightness, etc.) does NOT change
+// a watcher's FOV range — it only affects the player's own detection radius.
+const ENEMY_GROUPS = [
+  // 0 — standard: balanced sight and hearing
+  { fovRange: 16, fovHalfAngle: Math.PI / 3.6, hearingRange: 28, speedMult: 1.0 },
+  // 1 — scout: short sight, acute hearing, fast
+  { fovRange: 12, fovHalfAngle: Math.PI / 5.0, hearingRange: 42, speedMult: 1.4 },
+  // 2 — guardian: wide FOV, poor hearing, slow
+  { fovRange: 22, fovHalfAngle: Math.PI / 3.0, hearingRange: 16, speedMult: 0.7 },
+];
+
+// Sound-reaction behaviour (triggered when noise reaches NOISE_THRESHOLD)
+const SOUND_REACT_TICKS       = 25;   // ticks a watcher spends checking the sound source
+const SOUND_CONFIRM_NOISE     = 22;   // noise still above this during check → watcher goes alert
+const SOUND_REACTION_TURN_SPD = 0.25; // fraction of remaining angle closed per tick when turning
 
 // Environment
 const SHADOW_LIGHT_THRESHOLD= 40;    // ambient light below this = shadow coverage
@@ -241,18 +257,26 @@ function spawnEnemy() {
     case 2: ex = randFloat(5, 95); ey = 95; break;
     default: ex = 5;               ey = randFloat(5, 95); break;
   }
+  const groupId = randInt(0, ENEMY_GROUPS.length - 1);
+  const group   = ENEMY_GROUPS[groupId];
   return {
-    id:           _enemyId++,
-    x:            ex,
-    y:            ey,
-    speed:        randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100),
-    fovRange:     ENEMY_BASE_DETECT_R, // updated each tick; was detectionRadius
-    fovHalfAngle: ENEMY_FOV_HALF_ANGLE,
-    alerted:      false,
-    alertTicks:   0,   // counts down; resets on re-trigger
-    patrolAngle:  randFloat(0, Math.PI * 2),
-    patrolSpeed:  randFloat(0.5, 1.5),
-    facingAngle:  randFloat(0, Math.PI * 2), // direction the enemy is facing
+    id:              _enemyId++,
+    x:               ex,
+    y:               ey,
+    speed:           randFloat(0.3, 0.8) * (1 + derived.threatLevel / 100) * group.speedMult,
+    fovRange:        group.fovRange,     // updated each tick by env factors
+    fovHalfAngle:    group.fovHalfAngle,
+    hearingRange:    group.hearingRange,
+    groupId,
+    alerted:         false,
+    alertTicks:      0,    // counts down; resets on re-trigger
+    soundReacting:   false, // watcher heard a sound and is turning to check
+    soundReactTicks: 0,
+    soundSourceX:    0,
+    soundSourceY:    0,
+    patrolAngle:     randFloat(0, Math.PI * 2),
+    patrolSpeed:     randFloat(0.5, 1.5),
+    facingAngle:     randFloat(0, Math.PI * 2), // direction the enemy is facing
   };
 }
 
@@ -544,9 +568,27 @@ function _checkNoiseDetection() {
   const noise = sensorRaw.noiseLevel;
   if (noise > NOISE_THRESHOLD) {
     _noiseCooldown = NOISE_EVENT_COOLDOWN;
-    _pushLog('👁 A watcher detected a sound — stay still!', 'danger');
-    // Alert all enemies temporarily; alertTicks auto-cancels if not re-triggered
-    exploreRun.enemies.forEach(e => { e.alerted = true; e.alertTicks = ENEMY_ALERT_MAX_TICKS; });
+
+    // Only watchers within their individual hearing range react to the sound.
+    const pX = exploreRun.player.x;
+    const pY = exploreRun.player.y;
+    let anyReacted = false;
+    exploreRun.enemies.forEach(e => {
+      const dx   = pX - e.x;
+      const dy   = pY - e.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= e.hearingRange && !e.alerted) {
+        e.soundReacting   = true;
+        e.soundReactTicks = SOUND_REACT_TICKS;
+        e.soundSourceX    = pX;
+        e.soundSourceY    = pY;
+        anyReacted = true;
+      }
+    });
+
+    if (anyReacted) {
+      _pushLog('👂 A watcher heard a sound — turning to look!', 'warn');
+    }
     _sensorInfluence.noise += INFLUENCE_DANGER_ADD;
   }
 }
@@ -575,15 +617,19 @@ function _checkNightEffects() {
 // ── Enemy detection radii ─────────────────────────────────────────────────────
 
 function _updateEnemyDetectionRadii() {
-  const lightFactor  = 1 + sensorRaw.ambientLight  / 100;    // 1.0–2.0
-  const brightFactor = 1 + sensorRaw.brightnessLevel / 200;  // 1.0–1.5
-  const shadowFactor = 1 - exploreRun.shadowCoverage * 0.55; // 0.45–1.0
-  const stealthFactor = exploreRun.inStealthMode ? 0.35 : 1.0;
-  const range = clamp(
-    ENEMY_BASE_DETECT_R * lightFactor * brightFactor * shadowFactor * stealthFactor,
-    4, 55,
-  );
-  exploreRun.enemies.forEach(e => { e.fovRange = range; });
+  // Only environmental factors affect a watcher's FOV range.
+  // Bright ambient light extends sight; shadows shorten it.
+  // Player state (stealth mode, screen brightness) does NOT affect enemy FOV —
+  // it affects the player's own detection radius instead.
+  const lightFactor  = 1 + sensorRaw.ambientLight / 200;    // 1.0–1.5
+  const shadowFactor = 1 - exploreRun.shadowCoverage * 0.45; // 0.55–1.0
+  exploreRun.enemies.forEach(e => {
+    const group = ENEMY_GROUPS[e.groupId] || ENEMY_GROUPS[0];
+    e.fovRange = clamp(
+      group.fovRange * lightFactor * shadowFactor,
+      4, group.fovRange * 1.5,
+    );
+  });
 }
 
 // ── Enemy spawn ───────────────────────────────────────────────────────────────
@@ -602,6 +648,7 @@ function _spawnEnemyMaybe() {
 function _updateEnemies() {
   const pX = exploreRun.player.x;
   const pY = exploreRun.player.y;
+  let soundConfirmed = false;
 
   exploreRun.enemies = exploreRun.enemies.filter(e => {
     const dx   = pX - e.x;
@@ -624,6 +671,28 @@ function _updateEnemies() {
         e.alerted = false;
         e.alertTicks = 0;
       }
+    } else if (e.soundReacting) {
+      // Sound-reaction: gradually turn to face the sound source and wait.
+      // If noise remains loud, escalate to fully alerted.  If it dies down, resume patrol.
+      const sdx = e.soundSourceX - e.x;
+      const sdy = e.soundSourceY - e.y;
+      const targetAngle = Math.atan2(sdy, sdx);
+      const ad = _angleDiff(targetAngle, e.facingAngle);
+      e.facingAngle += ad * SOUND_REACTION_TURN_SPD; // gradually turn toward the sound
+
+      if (e.soundReactTicks > 0) e.soundReactTicks--;
+
+      if (sensorRaw.noiseLevel > SOUND_CONFIRM_NOISE) {
+        // Sound confirmed — pursue
+        e.alerted       = true;
+        e.alertTicks    = ENEMY_ALERT_MAX_TICKS;
+        e.soundReacting = false;
+        soundConfirmed  = true;
+      } else if (e.soundReactTicks === 0) {
+        // Sound died away — back to patrol
+        e.soundReacting = false;
+      }
+      // Stay in place while checking (no positional update)
     } else {
       // Patrol: approximate figure-8 using two overlaid sine waves.
       e.patrolAngle += e.patrolSpeed * PATROL_ANGLE_STEP;
@@ -652,9 +721,12 @@ function _updateEnemies() {
     }
     return true;
   });
-}
 
-// ── Enemy detection check ─────────────────────────────────────────────────────
+  if (soundConfirmed) {
+    _pushLog('🚨 A watcher confirmed the sound — moving in!', 'danger');
+    _sensorInfluence.noise += INFLUENCE_DANGER_ADD;
+  }
+}
 
 /**
  * Normalise the signed difference between two angles to the range [-π, π].

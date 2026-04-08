@@ -286,7 +286,7 @@ export function buildExploreScreen() {
     { key: 'visibility',     label: 'Visibility',     color: 'meter-blue',
       info: 'Ambient light + screen brightness + time of day. High = brighter environment — better sight but more exposed.' },
     { key: 'stealth',        label: 'Stealth',        color: 'meter-green',
-      info: 'Quiet + still + dark = high stealth. Stay silent (noise < 18) for 3 s to enter GHOST mode — enemy cone range shrinks to 35% and your exposure radius drops to 20%.' },
+      info: 'Quiet + still + dark = high stealth. Stay silent (noise < 18) for 3 s to enter GHOST mode — your exposure radius drops to 20%, making you nearly undetectable inside enemy cones.' },
     { key: 'exposure',       label: 'Exposure',       color: 'meter-orange',
       info: 'Noise + ambient light + daytime. High = you are visible to enemies. Pushes up the Danger meter and raises detection risk.' },
     { key: 'stability',      label: 'Stability',      color: 'meter-cyan',
