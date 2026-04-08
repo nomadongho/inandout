@@ -52,9 +52,14 @@ const NOISE_THRESHOLD       = 28;    // noise level that alerts nearby enemies
 const SILENCE_STEALTH_SECS  = 3.0;   // s of quiet → stealth mode
 const STEALTH_BREAK_NOISE   = 18;    // noise above this breaks stealth mode
 const UN_ALERT_NOISE        = 10;    // enemy un-alerts when noise drops below this
-const ENEMY_BASE_DETECT_R   = 22;    // base FOV range for enemies (0–100 grid units)
-const ENEMY_FOV_HALF_ANGLE  = Math.PI / 3.6; // ≈50° half-angle → ~100° total cone
-const PLAYER_BASE_DETECT_R  = 4;     // base player exposure radius (grid units)
+const ENEMY_BASE_DETECT_R          = 22;    // base FOV range for enemies (0–100 grid units)
+const ENEMY_FOV_HALF_ANGLE         = Math.PI / 3.6; // ≈50° half-angle → ~100° total cone
+const PLAYER_BASE_DETECT_R         = 4;     // base player exposure radius (grid units)
+const PLAYER_RADIUS_NOISE_MULT     = 14;    // noise contribution to player exposure radius
+const PLAYER_RADIUS_LIGHT_MULT     = 8;     // ambient light contribution
+const PLAYER_RADIUS_BRIGHT_MULT    = 6;     // screen brightness contribution
+const MIN_DETECTION_DIST           = 0.01;  // minimum enemy-player distance to avoid division by zero
+const DEFAULT_ANGULAR_EXPANSION    = Math.PI; // angular expansion used when enemy is on top of player
 const DETECTION_COOLDOWN    = 30;    // ticks (~3 s) between detection energy hits
 const NOISE_EVENT_COOLDOWN  = 20;    // ticks before another noise event
 const ENEMY_ALERT_MAX_TICKS = 60;    // auto-cancel alert after ~6 s if not re-triggered
@@ -651,7 +656,12 @@ function _updateEnemies() {
 
 // ── Enemy detection check ─────────────────────────────────────────────────────
 
-/** Normalise angle difference to [-π, π]. */
+/**
+ * Normalise the signed difference between two angles to the range [-π, π].
+ * @param {number} a - first angle in radians
+ * @param {number} b - second angle in radians
+ * @returns {number} signed difference in [-π, π]
+ */
 function _angleDiff(a, b) {
   let d = a - b;
   while (d >  Math.PI) d -= 2 * Math.PI;
@@ -670,9 +680,9 @@ function _computePlayerDetectionRadius() {
   const brightness = sensorRaw.brightnessLevel;
 
   let r = PLAYER_BASE_DETECT_R;
-  r += (noise      / 100) * 14; // loud noise greatly expands presence
-  r += (light      / 100) * 8;  // bright environment makes you more visible
-  r += (brightness / 100) * 6;  // bright screen leaks light, revealing you
+  r += (noise      / 100) * PLAYER_RADIUS_NOISE_MULT;  // loud noise greatly expands presence
+  r += (light      / 100) * PLAYER_RADIUS_LIGHT_MULT;  // bright environment makes you more visible
+  r += (brightness / 100) * PLAYER_RADIUS_BRIGHT_MULT; // bright screen leaks light, revealing you
   r *= (1 - exploreRun.shadowCoverage * 0.65); // shadows shrink the radius
   if (exploreRun.inStealthMode) r *= 0.2;       // ghost mode: almost invisible
 
@@ -706,9 +716,9 @@ function _checkEnemyDetections() {
 
     // Expand the cone half-angle by the angular size of the player's exposure radius
     // so that even if the player is slightly outside the centre line, their circle overlaps.
-    const angularExpansion = dist > 0.01
+    const angularExpansion = dist > MIN_DETECTION_DIST
       ? Math.asin(Math.min(1, playerR / dist))
-      : Math.PI;
+      : DEFAULT_ANGULAR_EXPANSION;
 
     if (angleDiff <= e.fovHalfAngle + angularExpansion) {
       detectedByAny = true;
